@@ -1295,8 +1295,7 @@ def google_callback():
         flash(f'Google 登入過程發生錯誤: {str(e)}', 'error')
         return redirect(url_for('index'))
 
-@app.route('/line_callback')
-def line_callback():
+# Duplicate route removed - keeping only one line_callback definition
     code = request.args.get('code')
     state = request.args.get('state')
 
