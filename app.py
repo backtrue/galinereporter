@@ -227,11 +227,11 @@ def index(): # 儀表板 (修正 NameError)
         # --- 修正 SyntaxError: with app.app_context() 移到下一行並縮排 ---
         with app.app_context():
             config = UserConfig.query.filter_by(google_email=current_user_email).first()
-    
+
     google_linked = bool(config and config.google_refresh_token_encrypted)
     line_linked = bool(config and config.line_user_id)
     ga_property_set = bool(config and config.ga_property_id)
-    
+
     ga_properties = []; ga_list_error = None; show_ga_selector = False
     if google_linked and not ga_property_set:
         if current_user_email: # 確保 email 存在才查詢
@@ -240,7 +240,7 @@ def index(): # 儀表板 (修正 NameError)
             ga_properties = ga_properties_for_dropdown
             if ga_list_error: flash(f"讀取 GA 資源清單錯誤: {ga_list_error}", "error")
         else: flash("無法識別您的 Google 帳號，請嘗試重新連結 Google 以選擇 GA 資源。", "warning"); show_ga_selector = False
-    
+
     report_result = session.pop('ga_report_test_result', None)
     access_token_result = session.pop('google_access_token_test_result', None)
 
@@ -474,4 +474,4 @@ if __name__ == '__main__':
     with app.app_context():
         print("檢查並建立資料庫表格..."); db.create_all(); print("資料庫表格檢查完畢。")
     print("啟動 Flask 應用程式...")
-    app.run(debug=True, port=5000, use_reloader=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
