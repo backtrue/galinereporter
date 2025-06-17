@@ -99,7 +99,16 @@ else:
     default_redirect_uri = 'https://galinereporter.replit.app/google-callback'
 
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', default_redirect_uri); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
-LINE_CHANNEL_ID = os.getenv('LINE_CHANNEL_ID'); LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET'); LINE_REDIRECT_URI = os.getenv('LINE_REDIRECT_URI', 'http://127.0.0.1:5000/line-callback')
+LINE_CHANNEL_ID = os.getenv('LINE_CHANNEL_ID'); LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET'); 
+# 設定 LINE 重新導向 URI，支援 preview 和 production 模式
+if os.getenv('REPL_OWNER') and os.getenv('REPL_SLUG'):
+    # Preview 模式
+    default_line_redirect_uri = f"{preview_url}/line-callback"
+else:
+    # Production 模式
+    default_line_redirect_uri = 'https://galinereporter.replit.app/line-callback'
+
+LINE_REDIRECT_URI = os.getenv('LINE_REDIRECT_URI', default_line_redirect_uri)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 SCHEDULER_SECRET_TOKEN = os.getenv('SCHEDULER_SECRET_TOKEN')
 
