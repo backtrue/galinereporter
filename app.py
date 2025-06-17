@@ -310,21 +310,31 @@ def refill_credits(user: UserConfig, amount=PRO_CREDITS_MONTHLY):
     if user.membership_type == 'pro' and (user.credits < amount):
         delta = amount - user.credits
         user.credits = amount
-        db.session.commit()
-        print(f"會員 {user.google_email} credits 補滿至 {amount}")
-        log_credit_change(user, delta, 'refill', '每月自動補滿')
-
-# 消耗 credits（每次傳送數據時呼叫）
-def consume_credit(user: UserConfig, count=1):
-    if user.credits >= count:
-        user.credits -= count
-        db.session.commit()
-        print(f"會員 {user.google_email} 消耗 {count} credits，剩餘 {user.credits}")
-        log_credit_change(user, -count, 'consume', '消耗 credits')
+        log_credit_change(user, delta, 'refill', f"Pro 會員補滿至 {amount}")
+        print(f"[補滿] 會員 {user.google_email} credits 補滿至 {amount}")
         return True
-    else:
-        print(f"會員 {user.google_email} credits 不足")
-        return False
+    return False
+
+# 通知 credits 不足的會員
+def notify_low_credits():
+    with app.app_context():
+        # 設定低點數閾值
+        LOW_CREDITS_THRESHOLD = 10
+
+        # 查找 credits 不足的活躍會員
+        low_credit_users = UserConfig.query.filter(
+            UserConfig.credits <= LOW_CREDITS_THRESHOLD,
+            UserConfig.is_active == True
+        ).all()
+
+        notified_count = 0
+        for user in low_credit_users:
+            # 這裡可以實作 LINE 通知或其他通知方式
+            print(f"[通知] 會員 {user.google_email} credits 不足，剩餘: {user.credits}")
+            notified_count += 1
+
+        print(f"[排程] 本次共通知 {notified_count} 位會員 credits 不足")
+    return notified_count
 
 # 加點（管理員或推薦等用途）
 def add_credits(user: UserConfig, count, change_type='admin', description=None):
@@ -797,9 +807,6 @@ def notify_low_credits():
                 "您的會員點數已低於 10 點，請盡快於會員中心購買補充，避免服務中斷。"
             )
             send_message_to_user(user, "點數即將用完提醒", msg)
-
-# 啟動每日 10:00 定時檢查
-scheduler.add_job(notify_low_credits, 'cron', hour=10, minute=0, id='low_credits_notify')
 
 # === 管理員手動補滿 pro 會員 credits API ===
 @app.route('/admin/refill-pro-credits', methods=['POST'])
