@@ -538,8 +538,8 @@ def index(): # 儀表板 (修正 NameError)
                            show_ga_selector=show_ga_selector, ga_properties=ga_properties, ga_list_error=ga_list_error,
                            config=config,
                            credits_logs=CreditLog.query.filter_by(user_email=config.google_email).order_by(CreditLog.created_at.desc()).limit(10).all() if config else [],
-                           referral_code=referral_code,
-                           referral_logs=referral_logs,
+                           referral_code=get_or_create_referral_code(config) if config else None,
+                           referral_logs=ReferralLog.query.filter_by(referrer_code=config.referral_code).order_by(ReferralLog.created_at.desc()).limit(10).all() if config and config.referral_code else [],
                            ga_report_test_result=report_result,
                            google_user_email_debug=current_user_email,
                            google_access_token_test_result=access_token_result)
