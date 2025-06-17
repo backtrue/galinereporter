@@ -7,6 +7,18 @@ from flask import Flask, redirect, request, session, url_for, render_template, f
 from dotenv import load_dotenv
 from functools import wraps
 
+# --- Stripe API ---
+import stripe
+
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY')
+STRIPE_PRODUCT_ID = os.getenv('STRIPE_PRODUCT_ID', 'prod_SW1E7lkXsFUyf2')
+STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID', 'price_0RazC8YDQY3sAQESAkflrTZC')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
+
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
 # --- Google API 相關 import ---
 from google.oauth2.credentials import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
@@ -34,10 +46,128 @@ import sqlalchemy
 # --- Click for Flask CLI ---
 import click
 
+# --- APScheduler for monthly jobs ---
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+
 # --- 載入環境變數 ---
 load_dotenv()
 
 app = Flask(__name__)
+
+# === Stripe 訂閱付款 API ===
+from flask import abort
+
+@app.route('/api/stripe/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    data = request.get_json() or {}
+    customer_email = data.get('email')
+    if not customer_email:
+        return jsonify({'error': '缺少 email'}), 400
+    # 1. 檢查 email 是否已註冊
+    user = UserConfig.query.filter_by(google_email=customer_email).first()
+    if not user:
+        return jsonify({'error': '此 email 尚未註冊，請先註冊會員'}), 400
+    # 2. 若未建立 Stripe customer，則建立並記錄
+    if not user.stripe_customer_id:
+        try:
+            customer = stripe.Customer.create(email=customer_email)
+            user.stripe_customer_id = customer.id
+            db.session.commit()
+        except Exception as e:
+            return jsonify({'error': f'Stripe customer 建立失敗: {str(e)}'}), 500
+    # 3. 計算 credits 折抵金額（1 credit = 10 JPY，最多 1500 JPY）
+    discount_amount = min(user.credits * 10, 1500)
+    coupon_id = None
+    if discount_amount > 0:
+        try:
+            coupon = stripe.Coupon.create(
+                amount_off=discount_amount,
+                currency='jpy',
+                duration='once',
+                name=f'首月 credits 折抵 {discount_amount} JPY'
+            )
+            coupon_id = coupon.id
+        except Exception as e:
+            return jsonify({'error': f'Stripe coupon 建立失敗: {str(e)}'}), 500
+    try:
+        checkout_params = {
+            'customer': user.stripe_customer_id,
+            'payment_method_types': ['card'],
+            'line_items': [{
+                'price': STRIPE_PRICE_ID,
+                'quantity': 1,
+            }],
+            'mode': 'subscription',
+            'success_url': data.get('success_url', url_for('index', _external=True)),
+            'cancel_url': data.get('cancel_url', url_for('index', _external=True)),
+        }
+        if coupon_id:
+            checkout_params['discounts'] = [{'coupon': coupon_id}]
+        checkout_session = stripe.checkout.Session.create(**checkout_params)
+        return jsonify({'checkout_url': checkout_session.url})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# === Stripe Webhook ===
+import json
+@app.route('/api/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+    event = None
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        print(f"Webhook 錯誤: {e}"); return 'Invalid payload', 400
+    except stripe.error.SignatureVerificationError as e:
+        print(f"Webhook 簽名驗證失敗: {e}"); return 'Invalid signature', 400
+    # 根據 event['type'] 處理對應事件
+    if event['type'] == 'invoice.paid':
+        print('訂閱付款成功', event['data']['object'])
+        stripe_customer_id = event['data']['object']['customer']
+        # 先找 user
+        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+        if not user:
+            # 若找不到，嘗試用 email 對應（第一次升級可能 stripe_customer_id 尚未寫入）
+            invoice_email = event['data']['object'].get('customer_email')
+            if not invoice_email and 'customer' in event['data']['object']:
+                # 進一步查詢 Stripe customer 資料
+                customer_obj = stripe.Customer.retrieve(stripe_customer_id)
+                invoice_email = customer_obj.email if customer_obj else None
+            if invoice_email:
+                user = UserConfig.query.filter_by(google_email=invoice_email).first()
+                if user:
+                    user.stripe_customer_id = stripe_customer_id
+        if user:
+            user.membership_type = 'pro'
+            refill_credits(user)
+            db.session.commit()
+        else:
+            print(f"找不到對應會員 (customer_id={stripe_customer_id})")
+    elif event['type'] == 'invoice.payment_failed':
+        print('訂閱付款失敗', event['data']['object'])
+        stripe_customer_id = event['data']['object']['customer']
+        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+        if user:
+            # 進入待付款狀態，可自訂欄位或通知
+            pass
+    elif event['type'] == 'customer.subscription.deleted':
+        print('訂閱取消', event['data']['object'])
+        stripe_customer_id = event['data']['object']['customer']
+        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+        if user:
+            user.membership_type = 'free'
+            db.session.commit()
+    elif event['type'] == 'customer.subscription.updated':
+        print('訂閱狀態更新', event['data']['object'])
+        # 可根據狀態進一步同步會員狀態
+    else:
+        print(f"收到未處理的 Stripe event: {event['type']}")
+    return '', 200
 app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
 
 # --- 資料庫設定 (Cloud SQL) ---
@@ -74,19 +204,146 @@ def decrypt_token(encrypted_token):
 
 # --- 資料庫模型 ---
 class UserConfig(db.Model):
-    __tablename__ = 'user_configs'; id = db.Column(db.Integer, primary_key=True); google_email = db.Column(String(255), nullable=False, unique=True, index=True); google_refresh_token_encrypted = db.Column(Text, nullable=True); line_user_id = db.Column(String(100), nullable=True, unique=False); ga_property_id = db.Column(String(50), nullable=True);
-    ga_account_name = db.Column(String(255), nullable=True); ga_property_name = db.Column(String(255), nullable=True); timezone = db.Column(String(50), nullable=False, default='Asia/Taipei');
-    is_active = db.Column(Boolean, nullable=False, default=True); is_admin = db.Column(Boolean, nullable=False, default=False)
+    __tablename__ = 'user_configs'
+    id = db.Column(db.Integer, primary_key=True)
+    google_email = db.Column(String(255), nullable=False, unique=True, index=True)
+    google_refresh_token_encrypted = db.Column(Text, nullable=True)
+    line_user_id = db.Column(String(100), nullable=True, unique=False)
+    ga_property_id = db.Column(String(50), nullable=True)
+    ga_account_name = db.Column(String(255), nullable=True)
+    ga_property_name = db.Column(String(255), nullable=True)
+    timezone = db.Column(String(50), nullable=False, default='Asia/Taipei')
+    is_active = db.Column(Boolean, nullable=False, default=True)
+    is_admin = db.Column(Boolean, nullable=False, default=False)
     updated_at = db.Column(DateTime, nullable=False, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    def __repr__(self): return f'<UserConfig Email:{self.google_email} Admin:{self.is_admin}>'
+    # Stripe/會員制相關欄位
+    stripe_customer_id = db.Column(String(100), nullable=True, unique=True, index=True)
+    membership_type = db.Column(String(20), nullable=False, default='free')  # 'free' or 'pro'
+    credits = db.Column(db.Integer, nullable=False, default=0)
+    # Referral system
+    referral_code = db.Column(String(32), nullable=True, unique=True, index=True)  # 自己的推薦碼
+    referred_by = db.Column(String(32), nullable=True, index=True)  # 推薦人 referral_code
+    referral_credits = db.Column(db.Integer, nullable=False, default=0)  # 累計因推薦獲得點數
+    def __repr__(self):
+        return f'<UserConfig Email:{self.google_email} Admin:{self.is_admin} Referral:{self.referral_code} ReferredBy:{self.referred_by}>'
+
+# 推薦紀錄表
+class ReferralLog(db.Model):
+    __tablename__ = 'referral_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    referrer_code = db.Column(String(32), nullable=False, index=True)  # 推薦人 referral_code
+    referred_email = db.Column(String(255), nullable=False, index=True)  # 被推薦人 email
+    credits_awarded = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    def __repr__(self):
+        return f'<ReferralLog referrer:{self.referrer_code} referred:{self.referred_email} credits:{self.credits_awarded}>'
+
+# 點數異動紀錄表
+class CreditLog(db.Model):
+    __tablename__ = 'credit_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    user_email = db.Column(String(255), nullable=False, index=True)
+    change_type = db.Column(String(32), nullable=False)  # 來源/用途 e.g. 'refill', 'consume', 'admin', 'referral', 'stripe'
+    delta = db.Column(db.Integer, nullable=False)  # 異動點數（正/負）
+    balance = db.Column(db.Integer, nullable=False)  # 異動後餘額
+    description = db.Column(String(255), nullable=True)
+    created_at = db.Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    def __repr__(self):
+        return f'<CreditLog {self.user_email} {self.change_type} {self.delta} {self.balance}>'
+
 
 class ReportSnapshot(db.Model):
     __tablename__ = 'report_snapshots'; id = db.Column(db.Integer, primary_key=True); config_id = db.Column(db.Integer, db.ForeignKey('user_configs.id'), nullable=False); snapshot_datetime_utc = db.Column(DateTime, nullable=False, default=datetime.datetime.utcnow); report_for_date = db.Column(String(10), nullable=False); report_for_timeslot = db.Column(String(20), nullable=False); sessions = db.Column(db.Integer, nullable=True); total_revenue = db.Column(db.Float, nullable=True); created_at = db.Column(DateTime, nullable=False, default=datetime.datetime.utcnow); user_config = db.relationship('UserConfig', backref=db.backref('report_snapshots_backref', lazy='dynamic'))
     def __repr__(self): return f'<ReportSnapshot ID:{self.id} ForDate:{self.report_for_date} Slot:{self.report_for_timeslot}>'
 
+# --- Credits 操作 function ---
+PRO_CREDITS_MONTHLY = 150
+FREE_SIGNUP_CREDITS = 0  # 可由管理員調整
+RECOMMEND_CREDITS = 20   # 可由管理員調整
+REFERRAL_AWARD_CREDITS = 20  # 推薦獎勵點數
+
+import secrets
+
+def get_or_create_referral_code(user):
+    if not user.referral_code:
+        # 產生唯一推薦碼
+        while True:
+            code = secrets.token_urlsafe(8)[:12]
+            if not UserConfig.query.filter_by(referral_code=code).first():
+                user.referral_code = code
+                db.session.commit()
+                break
+    return user.referral_code
+
+# 補滿所有 pro 會員 credits（每月 1 號自動補滿）
+def refill_all_pro_members_credits():
+    with app.app_context():
+        pro_users = UserConfig.query.filter_by(membership_type='pro').all()
+        count_refilled = 0
+        for user in pro_users:
+            if user.credits < PRO_CREDITS_MONTHLY:
+                user.credits = PRO_CREDITS_MONTHLY
+                db.session.commit()
+                print(f"[排程] 會員 {user.google_email} credits 補滿至 {PRO_CREDITS_MONTHLY}")
+                count_refilled += 1
+        print(f"[排程] 本次共補滿 {count_refilled} 位 pro 會員 credits")
+    return count_refilled
+
+def log_credit_change(user, delta, change_type, description=None):
+    # 寫入 CreditLog
+    log = CreditLog(
+        user_email=user.google_email,
+        change_type=change_type,
+        delta=delta,
+        balance=user.credits,
+        description=description
+    )
+    db.session.add(log)
+    db.session.commit()
+
+def refill_credits(user: UserConfig, amount=PRO_CREDITS_MONTHLY):
+    if user.membership_type == 'pro' and (user.credits < amount):
+        delta = amount - user.credits
+        user.credits = amount
+        db.session.commit()
+        print(f"會員 {user.google_email} credits 補滿至 {amount}")
+        log_credit_change(user, delta, 'refill', '每月自動補滿')
+
+# 消耗 credits（每次傳送數據時呼叫）
+def consume_credit(user: UserConfig, count=1):
+    if user.credits >= count:
+        user.credits -= count
+        db.session.commit()
+        print(f"會員 {user.google_email} 消耗 {count} credits，剩餘 {user.credits}")
+        log_credit_change(user, -count, 'consume', '消耗 credits')
+        return True
+    else:
+        print(f"會員 {user.google_email} credits 不足")
+        return False
+
+# 加點（管理員或推薦等用途）
+def add_credits(user: UserConfig, count, change_type='admin', description=None):
+    user.credits += count
+    db.session.commit()
+    print(f"會員 {user.google_email} 增加 {count} credits，剩餘 {user.credits}")
+    log_credit_change(user, count, change_type, description or '管理員/推薦/Stripe 增加')
+
 # --- 在應用程式初始化時嘗試建立資料庫表格 ---
 with app.app_context():
     print("應用程式啟動：檢查並建立資料庫表格..."); db.create_all(); print("應用程式啟動：資料庫表格檢查/建立完畢。")
+
+# === APScheduler 啟動與註冊每月補滿任務 ===
+def start_scheduler():
+    scheduler = BackgroundScheduler(timezone='Asia/Taipei')
+    # 每月 1 號 00:10 執行
+    scheduler.add_job(refill_all_pro_members_credits, CronTrigger(day=1, hour=0, minute=10))
+    scheduler.start()
+    print("APScheduler 啟動，已註冊每月 1 號自動補滿 pro 會員 credits 任務。")
+
+try:
+    start_scheduler()
+except Exception as e:
+    print(f"APScheduler 啟動失敗: {e}")
 
 # --- Google/LINE OAuth/Bot 設定 ---
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID'); GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET'); GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"; # 自動檢測環境來設定正確的重新導向 URI
@@ -266,11 +523,387 @@ def index(): # 儀表板 (修正 NameError)
                            google_linked=google_linked, line_linked=line_linked, ga_property_set=ga_property_set,
                            show_ga_selector=show_ga_selector, ga_properties=ga_properties, ga_list_error=ga_list_error,
                            config=config,
+                           credits_logs=credits_logs,
+                           referral_code=referral_code,
+                           referral_logs=referral_logs,
                            ga_report_test_result=report_result,
                            google_user_email_debug=current_user_email,
                            google_access_token_test_result=access_token_result)
 
 # ... (其他所有路由 @app.route('/settings') 到 @app.route('/test-ga-report-manual/<date_mode>') 與上一版相同，此處省略) ...
+
+# === 推薦系統 API ===
+from flask import g
+
+@app.route('/api/referral/logs', methods=['GET'])
+def api_get_referral_logs():
+    current_user_email = session.get('current_user_google_email')
+    if not current_user_email:
+        return jsonify({"error": "請先登入"}), 401
+    user = UserConfig.query.filter_by(google_email=current_user_email).first()
+    if not user:
+        return jsonify({"error": "找不到用戶"}), 404
+    code = get_or_create_referral_code(user)
+    logs = ReferralLog.query.filter_by(referrer_code=code).order_by(ReferralLog.created_at.desc()).all()
+    result = [{
+        "referred_email": log.referred_email,
+        "credits_awarded": log.credits_awarded,
+        "created_at": log.created_at.strftime('%Y-%m-%d %H:%M:%S')
+    } for log in logs]
+    return jsonify(result)
+
+@app.route('/api/referral/my-code', methods=['GET'])
+def api_get_my_referral_code():
+    current_user_email = session.get('current_user_google_email')
+    if not current_user_email:
+        return jsonify({"error": "請先登入"}), 401
+    user = UserConfig.query.filter_by(google_email=current_user_email).first()
+    if not user:
+        return jsonify({"error": "找不到用戶"}), 404
+    code = get_or_create_referral_code(user)
+    referral_url = url_for('index', _external=True) + f'?ref={code}'
+    return jsonify({"referral_code": code, "referral_url": referral_url})
+
+@app.route('/api/referral/bind', methods=['POST'])
+def api_bind_referral():
+    current_user_email = session.get('current_user_google_email')
+    if not current_user_email:
+        return jsonify({"error": "請先登入"}), 401
+    user = UserConfig.query.filter_by(google_email=current_user_email).first()
+    if not user:
+        return jsonify({"error": "找不到用戶"}), 404
+    if user.referred_by:
+        return jsonify({"error": "已經綁定過推薦人，無法再次綁定"}), 400
+    data = request.get_json() or {}
+    code = data.get('referral_code')
+    if not code:
+        return jsonify({"error": "缺少推薦碼"}), 400
+    referrer = UserConfig.query.filter_by(referral_code=code).first()
+    if not referrer or referrer.google_email == current_user_email:
+        return jsonify({"error": "推薦碼無效或不能推薦自己"}), 400
+    user.referred_by = code
+    db.session.commit()
+    return jsonify({"success": True, "referred_by": code})
+
+# === Stripe 購買 credits API ===
+@app.route('/api/stripe/create-credit-session', methods=['POST'])
+def create_credit_checkout_session():
+    current_user_email = session.get('current_user_google_email')
+    if not current_user_email:
+        return jsonify({"error": "請先登入"}), 401
+    data = request.get_json() or {}
+    credits = int(data.get('credits', 0))
+    if credits not in [50, 100, 200, 500]:
+        return jsonify({"error": "僅支援購買 50/100/200/500 點"}), 400
+    user = UserConfig.query.filter_by(google_email=current_user_email).first()
+    if not user:
+        return jsonify({"error": "找不到用戶"}), 404
+    # 根據會員身份決定單價
+    if user.membership_type == 'pro':
+        unit_price = 10  # JPY
+    else:
+        unit_price = 20  # JPY
+    amount_jpy = credits * unit_price
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            customer_email=current_user_email,
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'jpy',
+                    'unit_amount': amount_jpy,
+                    'product_data': {
+                        'name': f'購買 {credits} 點數',
+                    },
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=data.get('success_url', url_for('index', _external=True)),
+            cancel_url=data.get('cancel_url', url_for('index', _external=True)),
+            metadata={
+                'credits': credits,
+                'purchase_type': 'credits',
+                'email': current_user_email,
+                'unit_price': unit_price,
+                'membership_type': user.membership_type
+            }
+        )
+        return jsonify({
+            'checkout_url': checkout_session.url,
+            'unit_price': unit_price,
+            'total_price': amount_jpy,
+            'membership_type': user.membership_type
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# === Stripe Webhook 補強推薦獎勵 ===
+@app.route('/api/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+    event = None
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        print(f"Webhook 錯誤: {e}"); return 'Invalid payload', 400
+    except stripe.error.SignatureVerificationError as e:
+        print(f"Webhook 簽名驗證失敗: {e}"); return 'Invalid signature', 400
+    # 根據 event['type'] 處理對應事件
+    if event['type'] == 'invoice.paid':
+        stripe_customer_id = event['data']['object']['customer']
+        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+        # 檢查是否 credits 購買
+        metadata = event['data']['object'].get('lines', {}).get('data', [{}])[0].get('metadata', {})
+        credits_purchased = 0
+        purchase_type = None
+        # 兼容舊版與新版 Stripe metadata
+        if 'credits' in metadata:
+            credits_purchased = int(metadata.get('credits', 0))
+            purchase_type = metadata.get('purchase_type')
+        elif 'metadata' in event['data']['object']:
+            md = event['data']['object']['metadata']
+            credits_purchased = int(md.get('credits', 0))
+            purchase_type = md.get('purchase_type')
+        # 若為 credits 購買
+        if purchase_type == 'credits' and credits_purchased > 0:
+            # 以 email 對應會員
+            customer_email = metadata.get('email') or event['data']['object'].get('customer_email')
+            if not user and customer_email:
+                user = UserConfig.query.filter_by(google_email=customer_email).first()
+            if user:
+                add_credits(user, credits_purchased, change_type='stripe', description=f'Stripe 購買 {credits_purchased} 點')
+                print(f"Stripe 單次付款：{user.google_email} 購買 {credits_purchased} credits 已入帳")
+            else:
+                print(f"Stripe credits 購買找不到對應會員 (email={customer_email})")
+            return '', 200
+        # === 原本訂閱升級流程 ===
+        if not user:
+            # 嘗試用 email 對應
+            customer_email = event['data']['object'].get('customer_email')
+            if customer_email:
+                user = UserConfig.query.filter_by(google_email=customer_email).first()
+                if user and not user.stripe_customer_id:
+                    user.stripe_customer_id = stripe_customer_id
+                    db.session.commit()
+        # 會員升級與補點
+        if user:
+            was_free = user.membership_type == 'free'
+            user.membership_type = 'pro'
+            refill_credits(user)
+            db.session.commit()
+            # === 推薦獎勵發放邏輯 ===
+            if was_free and user.referred_by:
+                referrer = UserConfig.query.filter_by(referral_code=user.referred_by).first()
+                if referrer:
+                    add_credits(referrer, REFERRAL_AWARD_CREDITS, change_type='referral', description=f'推薦 {user.google_email} 升級')
+                    referrer.referral_credits += REFERRAL_AWARD_CREDITS
+                    db.session.commit()
+                    # 記錄 log
+                    log = ReferralLog(referrer_code=referrer.referral_code, referred_email=user.google_email, credits_awarded=REFERRAL_AWARD_CREDITS)
+                    db.session.add(log)
+                    db.session.commit()
+                    print(f"推薦獎勵：{referrer.google_email} 推薦 {user.google_email}，發放 {REFERRAL_AWARD_CREDITS} credits")
+        else:
+            print(f"找不到對應會員 (customer_id={stripe_customer_id})")
+    elif event['type'] == 'invoice.payment_failed':
+        print('付款失敗', event['data']['object'])
+        stripe_customer_id = event['data']['object']['customer']
+        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+        if user:
+            notify_msg = (
+                "【付款失敗通知】\n\n"
+                "您的會員付款失敗，請盡快於會員中心更新付款資訊，以免服務中斷。\n"
+                "如已完成付款可忽略此訊息。"
+            )
+            send_message_to_user(user, "付款失敗通知", notify_msg)
+        else:
+            print(f"[付款失敗通知] 找不到對應會員 (customer_id={stripe_customer_id})")
+
+    elif event['type'] == 'customer.subscription.deleted':
+        print('訂閱取消', event['data']['object'])
+        stripe_customer_id = event['data']['object']['customer']
+        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+        if user:
+            user.membership_type = 'free'
+            db.session.commit()
+    elif event['type'] == 'customer.subscription.updated':
+        print('訂閱狀態更新', event['data']['object'])
+        # 可根據狀態進一步同步會員狀態
+    else:
+        print(f"收到未處理的 Stripe event: {event['type']}")
+    return '', 200
+
+# === 點數異動紀錄查詢 API ===
+@app.route('/api/credit/logs', methods=['GET'])
+def api_get_credit_logs():
+    current_user_email = session.get('current_user_google_email')
+    if not current_user_email:
+        return jsonify({"error": "請先登入"}), 401
+    logs = CreditLog.query.filter_by(user_email=current_user_email).order_by(CreditLog.created_at.desc()).all()
+    result = [{
+        "change_type": log.change_type,
+        "delta": log.delta,
+        "balance": log.balance,
+        "description": log.description,
+        "created_at": log.created_at.strftime('%Y-%m-%d %H:%M:%S')
+    } for log in logs]
+    return jsonify(result)
+
+# === 管理員 credits 異動紀錄查詢 ===
+@app.route('/admin/credit/logs', methods=['GET'])
+@admin_login_required
+def admin_credit_logs():
+    # 支援查詢參數：email, type, start, end, page, per_page
+    email = request.args.get('email')
+    change_type = request.args.get('type')
+    start = request.args.get('start')
+    end = request.args.get('end')
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    q = CreditLog.query
+    if email:
+        q = q.filter(CreditLog.user_email == email)
+    if change_type:
+        q = q.filter(CreditLog.change_type == change_type)
+    if start:
+        q = q.filter(CreditLog.created_at >= start)
+    if end:
+        q = q.filter(CreditLog.created_at <= end)
+    q = q.order_by(CreditLog.created_at.desc())
+    logs = q.paginate(page=page, per_page=per_page, error_out=False)
+    result = [{
+        "user_email": log.user_email,
+        "change_type": log.change_type,
+        "delta": log.delta,
+        "balance": log.balance,
+        "description": log.description,
+        "created_at": log.created_at.strftime('%Y-%m-%d %H:%M:%S')
+    } for log in logs.items]
+    return jsonify({
+        "total": logs.total,
+        "page": page,
+        "per_page": per_page,
+        "logs": result
+    })
+
+# === 管理員推薦紀錄查詢 ===
+@app.route('/admin/referral/logs', methods=['GET'])
+@admin_login_required
+def admin_referral_logs():
+    # 支援查詢參數：referrer_code, referred_email, start, end, page, per_page
+    referrer_code = request.args.get('referrer_code')
+    referred_email = request.args.get('referred_email')
+    start = request.args.get('start')
+    end = request.args.get('end')
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    q = ReferralLog.query
+    if referrer_code:
+        q = q.filter(ReferralLog.referrer_code == referrer_code)
+    if referred_email:
+        q = q.filter(ReferralLog.referred_email == referred_email)
+    if start:
+        q = q.filter(ReferralLog.created_at >= start)
+    if end:
+        q = q.filter(ReferralLog.created_at <= end)
+    q = q.order_by(ReferralLog.created_at.desc())
+    logs = q.paginate(page=page, per_page=per_page, error_out=False)
+    result = [{
+        "referrer_code": log.referrer_code,
+        "referred_email": log.referred_email,
+        "credits_awarded": log.credits_awarded,
+        "created_at": log.created_at.strftime('%Y-%m-%d %H:%M:%S')
+    } for log in logs.items]
+    return jsonify({
+        "total": logs.total,
+        "page": page,
+        "per_page": per_page,
+        "logs": result
+    })
+
+# === Bravo Brevo SMTP 郵件發送輔助函式 ===
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from apscheduler.schedulers.background import BackgroundScheduler
+import datetime
+
+def send_email_via_bravo(to, subject, body, html=False):
+    smtp_host = 'smtp-relay.brevo.com'
+    smtp_port = 587
+    smtp_user = '68287d002@smtp-brevo.com'
+    smtp_pass = '834JGkPLB5qMQX9f'
+    from_addr = smtp_user
+    msg = MIMEMultipart()
+    msg['From'] = from_addr
+    msg['To'] = to if isinstance(to, str) else ','.join(to)
+    msg['Subject'] = subject
+    if html:
+        msg.attach(MIMEText(body, 'html', 'utf-8'))
+    else:
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(from_addr, [to] if isinstance(to, str) else to, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[SMTP] 郵件發送失敗: {e}")
+        return False
+
+# === LINE 優先通知（失敗自動 fallback email） ===
+def send_message_to_user(user, subject, body, html=False):
+    """
+    user: UserConfig 實例
+    subject: 郵件主旨（LINE 不顯示）
+    body: 訊息內容
+    html: 是否為 HTML 郵件內容
+    """
+    line_sent = False
+    # 1. 嘗試發送 LINE（如有 line_user_id）
+    if getattr(user, 'line_user_id', None):
+        try:
+            line_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
+            # LINE 僅支援純文字
+            line_api.push_message(user.line_user_id, TextSendMessage(text=body))
+            line_sent = True
+        except Exception as e:
+            print(f"[LINE] 發送失敗: {e}")
+    # 2. 若 LINE 失敗或未綁定，改發 email
+    if not line_sent:
+        print(f"[通知] 改用 email 發送給 {user.google_email}")
+        send_email_via_bravo(user.google_email, subject, body, html=html)
+
+# === credits 快用完自動提醒任務 ===
+def notify_low_credits():
+    with app.app_context():
+        users = UserConfig.query.filter(UserConfig.credits < 10).all()
+        for user in users:
+            msg = (
+                "【點數即將用完提醒】\n\n"
+                "您的會員點數已低於 10 點，請盡快於會員中心購買補充，避免服務中斷。"
+            )
+            send_message_to_user(user, "點數即將用完提醒", msg)
+
+# 啟動每日 10:00 定時檢查
+scheduler.add_job(notify_low_credits, 'cron', hour=10, minute=0, id='low_credits_notify')
+
+# === 管理員手動補滿 pro 會員 credits API ===
+@app.route('/admin/refill-pro-credits', methods=['POST'])
+@admin_login_required
+def admin_refill_pro_credits():
+    try:
+        count = refill_all_pro_members_credits()
+        return jsonify({"status": "success", "message": f"已補滿 {count} 位 pro 會員 credits"})
+    except Exception as e:
+        print(f"管理員手動補滿發生錯誤: {e}")
+        return jsonify({"status": "error", "message": str(e)})
+
 @app.route('/settings')
 def settings():
     current_user_email = session.get('current_user_google_email')
