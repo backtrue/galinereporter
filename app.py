@@ -344,8 +344,31 @@ def login_line():
         flash("LINE 設定不完整，請聯繫管理員。", "error")
         return redirect(url_for('settings'))
 
-    line_auth_url = f"https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id={LINE_CHANNEL_ID}&redirect_uri={LINE_REDIRECT_URI}&state=12345&scope=profile%20openid%20email"
-    return redirect(line_auth_url)
+    state = str(uuid.uuid4())
+    session['line_oauth_state'] = state
+
+    # 動態決定 LINE 重定向 URI
+    if request.host.endswith('.repl.co'):
+        # Preview 模式
+        redirect_uri = f"https://{request.host}/line-callback"
+    else:
+        # Production 模式
+        redirect_uri = 'https://galinereporter.replit.app/line-callback'
+
+    print(f"LINE OAuth - 使用重定向 URI: {redirect_uri}")
+
+    # LINE OAuth 授權 URL
+    params = {
+        'response_type': 'code',
+        'client_id': LINE_CHANNEL_ID,
+        'redirect_uri': redirect_uri,
+        'state': state,
+        'scope': 'profile'
+    }
+
+    from urllib.parse import urlencode
+    auth_url = 'https://access.line.me/oauth2/v2.1/authorize?' + urlencode(params)
+    return redirect(auth_url)
 
 @app.route('/line-callback')
 def line_callback():
@@ -362,7 +385,7 @@ def line_callback():
         return redirect(url_for('settings'))
 
     # 檢查 state 參數
-    if state != '12345':
+    if state != session.get('line_oauth_state'):
         flash("LINE 登入失敗：狀態參數不匹配", "error")
         return redirect(url_for('settings'))
 
@@ -371,11 +394,21 @@ def line_callback():
         flash("LINE 設定不完整，請聯繫管理員。", "error")
         return redirect(url_for('settings'))
 
+    # 動態決定 LINE 重定向 URI（必須與授權時一致）
+    if request.host.endswith('.repl.co'):
+        # Preview 模式
+        redirect_uri = f"https://{request.host}/line-callback"
+    else:
+        # Production 模式
+        redirect_uri = 'https://galinereporter.replit.app/line-callback'
+
+    print(f"LINE Token Exchange - 使用重定向 URI: {redirect_uri}")
+
     # 交換 access token
     token_data = {
         'grant_type': 'authorization_code',
         'code': code,
-        'redirect_uri': LINE_REDIRECT_URI,
+        'redirect_uri': redirect_uri,
         'client_id': LINE_CHANNEL_ID,
         'client_secret': LINE_CHANNEL_SECRET
     }
