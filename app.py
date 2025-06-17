@@ -89,7 +89,16 @@ with app.app_context():
     print("應用程式啟動：檢查並建立資料庫表格..."); db.create_all(); print("應用程式啟動：資料庫表格檢查/建立完畢。")
 
 # --- Google/LINE OAuth/Bot 設定 ---
-GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID'); GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET'); GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"; GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'https://your-deployment-url.replit.app/google-callback'); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID'); GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET'); GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"; # 自動檢測環境來設定正確的重新導向 URI
+if os.getenv('REPL_OWNER') and os.getenv('REPL_SLUG'):
+    # Preview 模式
+    preview_url = f"https://{os.getenv('REPL_SLUG')}--{os.getenv('REPL_OWNER')}.repl.co"
+    default_redirect_uri = f"{preview_url}/google-callback"
+else:
+    # Production 模式
+    default_redirect_uri = 'https://galinereporter.replit.app/google-callback'
+
+GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', default_redirect_uri); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 LINE_CHANNEL_ID = os.getenv('LINE_CHANNEL_ID'); LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET'); LINE_REDIRECT_URI = os.getenv('LINE_REDIRECT_URI', 'http://127.0.0.1:5000/line-callback')
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 SCHEDULER_SECRET_TOKEN = os.getenv('SCHEDULER_SECRET_TOKEN')
