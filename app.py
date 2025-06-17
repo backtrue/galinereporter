@@ -337,11 +337,10 @@ def add_credits(user: UserConfig, count, change_type='admin', description=None):
 with app.app_context():
     print("應用程式啟動：檢查並建立資料庫表格..."); db.create_all(); print("應用程式啟動：資料庫表格檢查/建立完畢。")
 
-# === APScheduler 啟動與註冊每月補滿任務 ===
-def start_scheduler():
+    # 啟動 APScheduler 並註冊任務
     scheduler = BackgroundScheduler(timezone='Asia/Taipei')
-    # 每月 1 號 00:10 執行 
-    scheduler.add_job(refill_all_pro_members_credits, CronTrigger(day=1, hour=0, minute=10))
+    scheduler.add_job(refill_all_pro_members_credits, 'cron', day=1, hour=0, minute=0, id='monthly_refill')
+    scheduler.add_job(notify_low_credits, 'cron', hour=10, minute=0, id='low_credits_notify')
     scheduler.start()
     print("APScheduler 啟動，已註冊每月 1 號自動補滿 pro 會員 credits 任務。")
 
