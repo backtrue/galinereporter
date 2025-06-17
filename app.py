@@ -537,7 +537,7 @@ def index(): # 儀表板 (修正 NameError)
                            google_linked=google_linked, line_linked=line_linked, ga_property_set=ga_property_set,
                            show_ga_selector=show_ga_selector, ga_properties=ga_properties, ga_list_error=ga_list_error,
                            config=config,
-                           credits_logs=CreditLog.query.filter_by(user_email=user.google_email).order_by(CreditLog.created_at.desc()).limit(10).all(),
+                           credits_logs=CreditLog.query.filter_by(user_email=config.google_email).order_by(CreditLog.created_at.desc()).limit(10).all() if config else [],
                            referral_code=referral_code,
                            referral_logs=referral_logs,
                            ga_report_test_result=report_result,
