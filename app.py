@@ -117,7 +117,7 @@ import json
 if 'handle_stripe_webhook' not in [rule.endpoint for rule in app.url_map.iter_rules()]:
     @app.route('/api/stripe/webhook', methods=['POST'])
     def handle_stripe_webhook():
-    payload = request.data
+        payload = request.data
     sig_header = request.headers.get('Stripe-Signature')
     event = None
     try:
