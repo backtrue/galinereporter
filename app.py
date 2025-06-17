@@ -491,7 +491,8 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             end_date_for_avg = target_date - datetime.timedelta(days=1); start_date_for_avg = end_date_for_avg - datetime.timedelta(days=6)
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
-                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in```python
+                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
+    total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None)
  historical_snapshots if s.total_revenue is not None); count_hist_days = len(historicalsnapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
