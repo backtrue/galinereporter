@@ -1218,102 +1218,145 @@ def login_google():
 
     return redirect(authorization_url)
 
+@app.route('/google_callback')
 def google_callback():
-    """Google OAuth 回調處理"""
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        flash('Google OAuth 未設定，請聯繫管理員。', 'error')
+    code = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+
+    if error:
+        flash(f'Google 授權失敗: {error}', 'error')
         return redirect(url_for('index'))
 
-    # 驗證 state
-    if request.args.get('state') != session.get('state'):
-        flash('認證失敗，請重試。', 'error')
+    if not code:
+        flash('Google 登入失敗：缺少授權碼', 'error')
         return redirect(url_for('index'))
 
     try:
-        # 建立 OAuth flow
-        flow = Flow.from_client_config(
-            {
-                "web": {
-                    "client_id": GOOGLE_CLIENT_ID,
-                    "client_secret": GOOGLE_CLIENT_SECRET,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://accounts.google.com/o/oauth2/token",
-                    "redirect_uris": [url_for('google_callback', _external=True)]
-                }
-            },
-            scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
-        )
+        # 準備憑證設定
+        client_config = {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [url_for('google_callback', _external=True)]
+            }
+        }
 
+        # 建立 Flow 物件來處理 OAuth
+        from google_auth_oauthlib.flow import Flow
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly'],
+            state=state
+        )
         flow.redirect_uri = url_for('google_callback', _external=True)
 
-        # 獲取令牌
+        # 使用授權碼換取 tokens
         flow.fetch_token(authorization_response=request.url)
 
-        # 獲取用戶信息
+        # 取得憑證
         credentials = flow.credentials
-        user_info_request = requests.get(
-            'https://www.googleapis.com/oauth2/v2/userinfo',
-            headers={'Authorization': f'Bearer {credentials.token}'}
-        )
-        user_info = user_info_request.json()
 
-        # 檢查或創建用戶
+        # 使用憑證取得使用者資訊
+        from googleapiclient.discovery import build
+        oauth2_service = build('oauth2', 'v2', credentials=credentials)
+        user_info = oauth2_service.userinfo().get().execute()
+
         user_email = user_info.get('email')
         if not user_email:
-            flash('無法獲取用戶 email，請重試。', 'error')
+            flash('無法取得 Google 帳號的 email 資訊', 'error')
             return redirect(url_for('index'))
 
-        user_config = UserConfig.query.filter_by(google_email=user_email).first()
-        if not user_config:
-            # 創建新用戶
-            referral_code = request.args.get('ref')
-            user_config = UserConfig(
-                google_email=user_email,
-                google_refresh_token_encrypted=encrypt_token(credentials.refresh_token) if credentials.refresh_token else None,
-                credits=FREE_SIGNUP_CREDITS
-            )
+        # 檢查或建立使用者紀錄
+        user = UserConfig.query.filter_by(google_email=user_email).first()
+        if not user:
+            # 新使用者，建立紀錄
+            user = UserConfig(google_email=user_email)
+            db.session.add(user)
 
-            # 處理推薦碼
-            if referral_code:
-                referrer = UserConfig.query.filter_by(referral_code=referral_code).first()
-                if referrer:
-                    user_config.referred_by = referral_code
-                    # 給推薦人獎勵
-                    referrer.referral_credits += REFERRAL_AWARD_CREDITS
-                    referrer.credits += REFERRAL_AWARD_CREDITS
-                    log_credit_change(referrer, REFERRAL_AWARD_CREDITS, 'referral', f'推薦用戶: {user_email}')
+        # 更新 refresh token (加密後儲存)
+        if credentials.refresh_token:
+            encrypted_refresh_token = encrypt_token(credentials.refresh_token)
+            if encrypted_refresh_token:
+                user.google_refresh_token_encrypted = encrypted_refresh_token
 
-                    # 記錄推薦日誌
-                    referral_log = ReferralLog(
-                        referrer_code=referral_code,
-                        referred_email=user_email,
-                        credits_awarded=REFERRAL_AWARD_CREDITS
-                    )
-                    db.session.add(referral_log)
+        db.session.commit()
 
-            db.session.add(user_config)
-            db.session.commit()
-
-            # 生成推薦碼
-            get_or_create_referral_code(user_config)
-
-            flash(f'歡迎 {user_email}！您已成功註冊。', 'success')
-        else:
-            # 更新現有用戶的 refresh token
-            if credentials.refresh_token:
-                user_config.google_refresh_token_encrypted = encrypt_token(credentials.refresh_token)
-                db.session.commit()
-            flash(f'歡迎回來 {user_email}！', 'success')
-
-        # 登入用戶
+        # 設定 session
         session['user_email'] = user_email
+        session['logged_in'] = True
 
+        flash(f'歡迎，{user_email}！Google 帳號連結成功。', 'success')
         return redirect(url_for('index'))
 
     except Exception as e:
-        print(f"Google 認證錯誤: {e}")
-        flash('Google 認證失敗，請重試。', 'error')
+        flash(f'Google 登入過程發生錯誤: {str(e)}', 'error')
         return redirect(url_for('index'))
+
+@app.route('/line_callback')
+def line_callback():
+    code = request.args.get('code')
+    state = request.args.get('state')
+
+    if not code:
+        flash('LINE 登入失敗：缺少授權碼', 'error')
+        return redirect(url_for('index'))
+
+    # 檢查 session 中的 user email
+    user_email = session.get('user_email')
+    if not user_email:
+        flash('請先完成 Google 登入', 'error')
+        return redirect(url_for('index'))
+
+    # 使用授權碼換取 access token
+    token_url = 'https://api.line.me/oauth2/v2.1/token'
+    token_data = {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': url_for('line_callback', _external=True),
+        'client_id': LINE_CHANNEL_ID,
+        'client_secret': LINE_CHANNEL_SECRET
+    }
+
+    try:
+        token_response = requests.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        token_info = token_response.json()
+        access_token = token_info.get('access_token')
+
+        if not access_token:
+            flash('LINE 登入失敗：無法取得存取權杖', 'error')
+            return redirect(url_for('index'))
+
+        # 使用 access token 取得用戶資訊
+        profile_url = 'https://api.line.me/v2/profile'
+        headers = {'Authorization': f'Bearer {access_token}'}
+        profile_response = requests.get(profile_url, headers=headers)
+        profile_response.raise_for_status()
+        profile_info = profile_response.json()
+
+        line_user_id = profile_info.get('userId')
+        if not line_user_id:
+            flash('LINE 登入失敗：無法取得用戶 ID', 'error')
+            return redirect(url_for('index'))
+
+        # 更新用戶的 LINE user ID
+        user = UserConfig.query.filter_by(google_email=user_email).first()
+        if user:
+            user.line_user_id = line_user_id
+            db.session.commit()
+            flash('LINE 帳號連結成功！', 'success')
+        else:
+            flash('找不到對應的用戶紀錄', 'error')
+
+    except requests.RequestException as e:
+        flash(f'LINE API 呼叫失敗: {str(e)}', 'error')
+    except Exception as e:
+        flash(f'LINE 登入過程發生錯誤: {str(e)}', 'error')
+
+    return redirect(url_for('dashboard'))
 
 # --- Google Analytics 報告生成 ---
 def generate_ga_report(user_config):
