@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}設定 - GA->LINE 報告器{% endblock %}
+
+{% block content %}
+<h1>報數據 - 設定</h1>
+
+<div class="section">
+    <h2>帳號連結</h2>
+    <p>
+        <a href="{{ url_for('login_google') }}" class="button">
+            {% if google_linked %}
+                重新連結/切換 Google 帳號
+                {% if google_user_email_debug %} (目前: {{ google_user_email_debug }}){% endif %}
+            {% else %}
+                連結 Google 帳號
+            {% endif %}
+        </a>
+    </p>
+    <p>
+        <a href="{{ url_for('login_line') }}" class="button {% if not google_linked %}disabled{% endif %}">
+            {% if line_linked %}
+                重新連結/切換 LINE 帳號
+                {% if config and config.line_user_id %}(已連結 User ID: ...{{ config.line_user_id[-6:] }}){% endif %}
+            {% else %}
+                連結 LINE 帳號
+            {% endif %}
+        </a>
+        {% if not google_linked %}<small class="text-muted">(請先連結 Google)</small>{% endif %}
+    </p>
+
+    {% if line_linked %}
+    <div class="flash-warning" style="margin-top: 15px;">
+        <strong>重要提示：</strong>為了確保您能收到每日報表通知，請務必將我們的官方帳號加為好友！<br>
+        <a href="https://line.me/R/ti/p/@791vlxya" target="_blank" class="button-link" style="font-weight:bold;">➡️ 點此加 @791vlxya 好友</a>
+    </div>
+    {% elif google_linked %}
+     <p class="warning" style="margin-top: 15px;">提示：連結 LINE 帳號後，請記得將官方帳號 <a href="https://line.me/R/ti/p/@791vlxya" target="_blank">@791vlxya</a> 加為好友才能接收通知喔！</p>
+    {% endif %}
+    
+</div>
+
+{% if google_linked %}
+<div class="section">
+    <h2>GA4 資源設定</h2>
+    {% if show_ga_selector %}
+        <div class="info-box">
+            <p>請選擇要使用的 GA4 資源：
+                {% if config and config.ga_property_id %}
+                    <br><small>目前已選: {{ config.ga_property_name if config.ga_property_name else config.ga_property_id }}
+                    {% if config.ga_account_name %}(帳號: {{ config.ga_account_name }}){% endif %}
+                    </small>
+                {% endif %}
+            </p>
+            {% if ga_properties %}
+                <form method="POST" action="{{ url_for('set_ga_property') }}">
+                    <select name="property_id" required>
+                        <option value="">-- 請選擇 GA4 資源 --</option>
+                        {% for prop in ga_properties %}
+                            <option value="{{ prop.id }}" {% if config and prop.id == config.ga_property_id %}selected{% endif %}>{{ prop.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">設定此 GA 資源</button>
+                </form>
+            {% elif not ga_list_error %}
+                 <p>正在載入資源清單...</p>
+            {% else %}
+                <p class="error">無法載入資源清單: {{ ga_list_error }}<br>請確認您的 Google 帳號有 GA4 存取權限，或稍後再試。您可以嘗試<a href="{{ url_for('login_google') }}">重新連結 Google 帳號</a>來刷新列表。</p>
+            {% endif %}
+        </div>
+    {% elif config and config.ga_property_id %}
+         <p>目前設定的 Property ID: <span class="token">{{ config.ga_property_id }}</span> <br>
+            {% if config.ga_property_name %}資源名稱: {{ config.ga_property_name }}{% endif %}
+            {% if config.ga_account_name %}<br>帳號名稱: {{ config.ga_account_name }}{% endif %}
+            <br><small>(如需更換，請點擊上方「重新連結 Google 帳號」來刷新資源列表)</small>
+        </p>
+    {% else %}
+         <p class="warning">Google 帳號已連結，但無法獲取 GA4 資源列表或尚未選擇。您可以嘗試 <a href="{{ url_for('login_google') }}">重新連結 Google 帳號</a> 來刷新列表。</p>
+    {% endif %}
+</div>
+{% endif %}
+
+{# --- 時區設定區塊已移除 --- #}
+
+<div class="section">
+    <h2>自動排程設定</h2>
+    <div class="info-box">
+        {# 排程開關表單，增加 ID #}
+        <form id="schedule-toggle-form">
+            <p>每日自動報表目前狀態：
+                {# 用 ID 包裹狀態文字，方便 JS 更新 #}
+                <strong id="schedule-status" class="{% if config and config.is_active %}status-success{% else %}status-warning{% endif %}">
+                    {% if config and config.is_active %}已啟用{% else %}已停用{% endif %}
+                </strong>
+            </p>
+            <p>
+                {# 啟用/停用按鈕，增加 ID #}
+                <button type="submit" id="toggle-schedule-btn" name="is_active_toggle" value="{{ 'disable' if config and config.is_active else 'enable' }}" class="button {% if config and config.is_active %}button-danger{% endif %}">
+                    {% if config and config.is_active %}停用自動排程{% else %}啟用自動排程{% endif %}
+                </button>
+                <span id="schedule-feedback" style="margin-left: 10px;"></span> {# 用於顯示 AJAX 回饋 #}
+            </p>
+            <p><small>報表將依據伺服器預設時區 (Asia/Taipei) 的 09:00, 12:00, 15:00, 18:00 發送。</small></p>
+            {% if not google_linked or not line_linked or not ga_property_set %}
+            <p class="warning">請注意：您需要先完成所有 Google 帳號連結、LINE 帳號連結及 GA4 資源設定，自動排程才會實際發送報表。</p>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+
+<div class="section danger-zone">
+    <h2>其他操作</h2>
+    <p>
+        <a href="{{ url_for('test_google_token') }}" class="button button-small">測試 Google Token</a>
+        <a href="{{ url_for('test_ga_report_manual', date_mode='yesterday') }}" class="button button-small">測試昨日報表</a>
+        <a href="{{ url_for('test_ga_report_manual', date_mode='today') }}" class="button button-small">測試今日報表</a>
+    </p>
+    <p><a href="{{ url_for('logout_all_debug') }}" class="button button-danger">清除此 Google 帳號的所有設定 (Debug)</a></p>
+    {% if config and config.is_admin %}
+    <p><a href="{{ url_for('admin_dashboard') }}" class="button">前往管理員儀表板</a></p>
+    {% endif %}
+</div>
+
+<div class="section navigation">
+    <p><a href="{{ url_for('index') }}" class="button">返回儀表板</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}儀表板 - 報數據{% endblock %}
+
+{% block content %}
+<h1>報數據 - 儀表板</h1>
+<div class="section">
+    <h2>目前綁定狀態</h2>
+    <p>
+        Google 帳號連結:
+        {% if google_linked %}
+            <span class="status-success">✔ 已連結</span>
+            <a href="{{ url_for('login_google') }}" class="button-link">(切換/重新連結)</a>
+        {% else %}
+            <span class="status-warning">✗ 未連結</span>
+        {% endif %}
+    </p>
+    <p>
+        LINE 帳號連結:
+        {% if line_linked %}
+            <span class="status-success">✔ 已連結</span>
+            <a href="{{ url_for('login_line') }}" class="button-link">(切換/重新連結)</a>
+        {% else %}
+            <span class="status-warning">✗ 未連結</span>
+        {% endif %}
+    </p>
+    <p>
+        GA4 Property:
+        {% if ga_property_set %}
+            <span class="status-success">✔ 已設定</span>
+            <a href="{{ url_for('settings') }}" class="button-link">(修改)</a>
+        {% else %}
+            <span class="status-warning">✗ 未設定</span>
+            {% if google_linked %}
+                <a href="{{ url_for('settings') }}" class="button-link">(前往設定)</a>
+            {% endif %}
+        {% endif %}
+    </p>
+    <p>
+        自動排程:
+        {% if config and config.is_active %}
+            <span class="status-success">✔ 已啟用</span>
+        {% else %}
+            <span class="status-warning">✗ 已停用</span>
+        {% endif %}
+         <a href="{{ url_for('settings') }}" class="button-link">(修改)</a>
+    </p>
+</div>
+
+{# --- 引導連結區塊 --- #}
+{% if not google_linked %}
+<div class="info-box">
+    <p>請先連結您的 Google 帳號以開始使用。</p>
+    <a href="{{ url_for('login_google') }}" class="button">連結 Google 帳號</a>
+</div>
+{% elif not line_linked %}
+<div class="info-box">
+    <p>Google 帳號已連結！請連結您的 LINE 帳號以接收通知。</p>
+    <a href="{{ url_for('login_line') }}" class="button">連結 LINE 帳號</a>
+</div>
+{% elif not ga_property_set %}
+    <div class="info-box">
+         <p>帳號皆已連結！請前往設定頁面選擇您要追蹤的 GA4 資源。</p>
+         <a href="{{ url_for('settings') }}" class="button">前往設定 GA4 資源</a>
+    </div>
+{% endif %}
+
+
+<div class="section actions">
+    <h2>立即發送報表</h2>
+    {% if google_linked and line_linked and ga_property_set %}
+        <a href="{{ url_for('test_ga_report_manual', date_mode='yesterday') }}" class="button">發送昨日報表到 LINE</a>
+        <a href="{{ url_for('test_ga_report_manual', date_mode='today') }}" class="button">發送今日報表到 LINE</a>
+        <p><small>(注意：手動發送也會將數據存入歷史快照)</small></p>
+    {% else %}
+        <p class="warning">請先完成所有帳號連結與 GA 資源設定，才能手動發送報表。</p>
+    {% endif %}
+</div>
+
+{# --- 上次手動測試結果顯示區 --- #}
+{% if ga_report_test_result %}
+    <div class="section">
+        <h2>上次手動測試結果:</h2>
+        <div class="token {% if '成功' in ga_report_test_result and '失敗' not in ga_report_test_result %}status-success{% elif '失敗' in ga_report_test_result %}status-error{% else %}info{% endif %}">
+            {{ ga_report_test_result | safe }}
+        </div>
+    </div>
+{% endif %}
+
+<div class="section app-purpose-description"> 
+    <h2>關於報數據</h2> 
+    <p>
+        「報數據」是一個自動化工具，讓電商經營者輕鬆追蹤關鍵數據。
+        透過連結您的 GA 和 LINE 帳號，本服務將會自動從您指定的 GA4 資源獲取最新關鍵數據，並將這些數據摘要透過 LINE 推送給您。
+        這讓您無需每次都登入GA介面，也能快速掌握重要的營運指標變化。
+    </p>
+    <p>
+        我們使用 Google 的安全授權流程 (OAuth) 來獲取您的 Google Analytics 唯讀權限，以讀取您授權的特定 GA4 資源數據。您的資料安全是我們的首要考量。
+    </p>
+</div>
+
+<div class="section navigation">
+    <p><a href="{{ url_for('settings') }}" class="button">前往完整設定頁面</a></p>
+    {% if config and config.is_admin %}
+        <p style="margin-top: 10px;"><a href="{{ url_for('admin_dashboard') }}" class="button-link">管理員儀表板</a></p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block head_extra %}
+{# 如果有 dashboard.html 專屬的 CSS 或 JS 可以放在這裡 #}
+{% endblock %}

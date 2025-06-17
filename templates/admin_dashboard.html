@@ -1,0 +1,101 @@
+{% extends "base.html" %} {# 確保繼承你的基礎模板 #}
+
+{% block title %}管理員儀表板 - 使用者總覽{% endblock %}
+
+{% block content %}
+<h1>管理員儀表板 - 使用者設定總覽</h1>
+
+{# Flash 訊息的顯示已由 base.html 統一處理，此處不需重複 #}
+
+<div class="section">
+    {% if user_configs %}
+        <p>目前總共有 <strong>{{ user_configs|length }}</strong> 筆使用者設定記錄。</p>
+        
+        <div style="overflow-x: auto; /* 讓表格在小螢幕上可以水平捲動 */">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Google Email</th>
+                        <th>LINE User ID</th>
+                        <th>GA Property ID</th>
+                        <th>GA Account Name</th>
+                        <th>GA Property Name</th>
+                        <th>時區 (DB儲存)</th> {# 修改標題以反映這是DB中的值 #}
+                        <th>啟用排程</th>
+                        <th>管理員</th>
+                        <th>最後更新 (UTC)</th>
+                        </tr>
+                </thead>
+                <tbody>
+                    {% for config_entry in user_configs %} {# 修改變數名稱以避免與全域 config 混淆 #}
+                    <tr>
+                        <td>{{ config_entry.id }}</td>
+                        <td>{{ config_entry.google_email }}</td>
+                        <td>{{ config_entry.line_user_id if config_entry.line_user_id else '未綁定' }}</td>
+                        <td>{{ config_entry.ga_property_id if config_entry.ga_property_id else '未設定' }}</td>
+                        <td>{{ config_entry.ga_account_name if config_entry.ga_account_name else 'N/A' }}</td>
+                        <td>{{ config_entry.ga_property_name if config_entry.ga_property_name else 'N/A' }}</td>
+                        <td>{{ config_entry.timezone }}</td> {# 直接顯示 DB 中儲存的時區 #}
+                        <td>
+                            {% if config_entry.is_active %}
+                                <span class="status-success">是</span>
+                            {% else %}
+                                <span class="status-warning">否</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if config_entry.is_admin %}
+                                <span class="status-success">是</span>
+                            {% else %}
+                                <span class="status-warning">否</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ config_entry.updated_at.strftime('%Y-%m-%d %H:%M:%S') if config_entry.updated_at else 'N/A' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="info-box">目前資料庫中沒有任何使用者設定記錄。</p>
+    {% endif %}
+</div>
+
+<div class="section navigation">
+    <p><a href="{{ url_for('index') }}" class="button">返回使用者儀表板</a></p>
+</div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    /* 專門給 admin_dashboard.html 用的額外樣式 */
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        font-size: 0.9em; /* 表格文字可以稍小 */
+    }
+    .admin-table th, .admin-table td {
+        border: 1px solid var(--border-color, #ddd);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top; /* 垂直靠上對齊 */
+    }
+    .admin-table th {
+        background-color: var(--neutral-background, #f2f2f2); /* 表頭背景色 */
+        font-weight: bold;
+        color: var(--text-primary, #333);
+    }
+    .admin-table tbody tr:nth-child(even) {
+        background-color: #f9f9f9; /* 斑馬條紋 */
+    }
+    .admin-table tbody tr:hover {
+        background-color: var(--primary-sky-blue, #e0efff); /* 滑過高亮 */
+    }
+    .button-small { /* 如果未來有小按鈕 */
+        padding: 5px 10px;
+        font-size: 0.8em;
+    }
+</style>
+{% endblock %}

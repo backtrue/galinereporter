@@ -1,0 +1,112 @@
+{% extends "base.html" %} {# 確保繼承你的基礎模板 #}
+
+{% block title %}隱私權政策 - 報數據{% endblock %}
+
+{% block content %}
+<h1>隱私權政策</h1>
+<p><strong>最後更新日期：</strong> {{ current_date if current_date else '2025-05-09' }}</p> {# 使用 Jinja2 變數 #}
+
+<p>歡迎使用報數據 (以下簡稱「本服務」)！我們非常重視您的隱私權。本隱私權政策旨在說明當您使用本服務時，我們會收集、使用、儲存和保護您的哪些資訊，以及您對這些資訊擁有哪些權利。</p>
+<p>請在使用本服務前仔細閱讀本政策。當您開始使用本服務時，即表示您已閱讀、瞭解並同意接受本政策的所有內容。</p>
+
+<h2>一、我們收集的資訊類型</h2>
+<p>為了提供服務，我們會在您同意的情況下，收集以下必要的資訊：</p>
+<ol>
+    <li>
+        <strong>透過 Google OAuth 登入與授權：</strong>
+        <ul>
+            <li>當您選擇「連結 Google 帳號」時，我們會引導您至 Google 進行身份驗證與授權。</li>
+            <li>我們會請求您授予以下權限：
+                <ul>
+                    <li><code>openid</code>, <code>email</code>, <code>profile</code>: 用於取得您的 Google 帳號基本資料，主要是您的 <strong>Email 地址</strong>，作為您在本服務中的唯一識別碼，以及未來與您進行服務相關溝通的管道。</li>
+                    <li><code>https://www.googleapis.com/auth/analytics.readonly</code>: 此為 <strong>Google Analytics (GA) 的唯讀權限</strong>。授予此權限後，本服務才能<strong>代表您</strong>：
+                        <ul>
+                            <li>讀取您有權限存取的 Google Analytics 帳號 (Accounts) 和資源 (Properties) 的<strong>清單</strong> (包含名稱和 ID)，以便您在我們的設定頁面中選擇要接收報表的目標資源。</li>
+                            <li>讀取您<strong>所選擇</strong>的特定 GA4 資源的<strong>匯總報表數據</strong>，目前主要包含「工作階段 (Sessions)」和「總收益 (Total Revenue)」指標。</li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+            <li><strong>請注意：</strong> 我們請求的是<strong>唯讀</strong>權限 (<code>analytics.readonly</code>)，本服務<strong>無法也絕不會</strong>修改您的 Google Analytics 帳戶或資源設定，也無法讀取超出上述範圍的數據。</li>
+            <li>為了能夠在背景為您自動獲取報表，我們會安全地<strong>儲存 Google 提供的 Refresh Token</strong>。此 Token 會經過<strong>加密處理</strong>後儲存在我們的資料庫中。</li>
+            <li>我們會儲存您最終選擇使用的 <strong>GA4 Property ID</strong>，以及對應的 <strong>Account Name</strong> 和 <strong>Property Name</strong> (用於內部識別和未來可能的 Benchmark 功能，詳見下方說明)。</li>
+        </ul>
+    </li>
+    <li>
+        <strong>透過 LINE Login 登入：</strong>
+        <ul>
+            <li>當您選擇「連結 LINE 帳號」時，我們會引導您至 LINE 進行身份驗證與授權。</li>
+            <li>我們會請求 <code>profile</code> 權限，以取得您的 <strong>LINE User ID</strong>。這是向您指定的 LINE 帳號發送報表通知的唯一必要資訊。</li>
+            <li>我們<strong>不會</strong>儲存您的 LINE 密碼。</li>
+            <li>我們僅儲存您的 LINE User ID，用於將 GA 報表發送給您。</li>
+        </ul>
+    </li>
+    <li>
+        <strong>使用者提供的設定資訊：</strong>
+        <ul>
+            <li>我們會儲存您選擇的<strong>目標 GA4 Property ID</strong> (以及對應名稱)。</li>
+            <li>我們會儲存您希望接收報表的 LINE User ID。</li>
+            <li>我們會儲存您為接收報表而設定的<strong>時區</strong> (例如 <code>Asia/Taipei</code>)。</li>
+            <li>我們會儲存您是否<strong>啟用自動排程</strong> (<code>is_active</code>) 的狀態。</li>
+        </ul>
+    </li>
+    <li>
+        <strong>儲存的數據快照：</strong>
+        <ul>
+           <li>為了提供「與過去七日比較」的功能，我們會儲存每次成功獲取的匯總數據快照（包含日期、時段標記、工作階段數、總收益數）。這些快照與您的設定相關聯。</li>
+        </ul>
+    </li>
+    <li>
+        <strong>自動收集的日誌資訊：</strong>
+        <ul>
+            <li>如同大多數網路服務，我們的伺服器 (Google Cloud Run) 可能會自動記錄您的請求資訊，例如 IP 位址、請求時間、瀏覽器類型等。這些資訊主要用於系統維護、安全監控和錯誤排除。</li>
+        </ul>
+    </li>
+    <li>
+        <strong>Cookies：</strong>
+        <ul>
+            <li>本服務目前主要使用必要的 Session Cookies 來維持您的登入狀態。這些 Cookies 通常在您關閉瀏覽器後失效。我們不會使用 Cookies 進行廣告追蹤。</li>
+        </ul>
+    </li>
+</ol>
+
+<h2>二、我們如何使用您的資訊</h2>
+<p>我們收集和使用您的資訊，目的僅限於：</p>
+<ul>
+    <li><strong>提供核心服務：</strong> 驗證您的身份，根據您的設定，代表您從 Google Analytics 獲取指定資源的數據，處理數據（例如計算七日平均），並將結果透過 LINE 發送給您。</li>
+    <li><strong>帳戶管理與識別：</strong> 使用您的 Google Email 作為帳戶唯一識別，儲存並管理您的個人化設定。</li>
+    <li><strong>服務相關溝通：</strong> 使用您的 Google Email 向您發送重要的服務公告、更新通知、帳戶狀態提醒、以及未來可能的帳單和付款通知。</li>
+    <li><strong>服務改善與分析：</strong> 我們可能使用匿名的、匯總的數據來分析服務的使用狀況、改善效能、修正錯誤。這些分析<strong>不涉及</strong>您個人的 GA 數據內容。</li>
+    <li><strong>(未來可能)Benchmark 功能：</strong> 我們計劃未來提供 Benchmark 功能。用於計算 Benchmark 的數據將會是<strong>完全匿名化和匯總</strong>的，<strong>絕不會</strong>揭露任何單一使用者的具體數據。我們將在該功能上線前提供更詳細的說明，並可能根據法規要求提供選擇退出 (Opt-out) 的選項。</li>
+</ul>
+<p><strong>我們承諾：絕不會將您提供給本服務的特定 Google Analytics 報表數據用於上述目的之外的任何用途，也絕不會分享或販售給任何第三方。</strong></p>
+
+<h2>三、資料儲存、安全與保留</h2>
+<ul>
+    <li>您的設定資訊及報表快照數據儲存在 Google Cloud Platform (GCP) 上的 Cloud SQL (PostgreSQL) 資料庫中，伺服器位於 [請填寫你選擇的GCP區域] 區域。</li>
+    <li>我們採取合理的技術和管理措施來保護您的資料安全，包括對 Google Refresh Token 進行加密儲存、使用 HTTPS 傳輸加密、並依賴 Google Cloud Platform 提供的安全防護。</li>
+    <li><strong>資料保留：</strong>您的設定記錄會在您主動刪除帳戶 (若未來提供此功能) 或停止使用服務一段時間後刪除。報表快照數據會定期清理，例如僅保留最近 [請決定並填寫天數，例如：90 天] 的數據。</li>
+</ul>
+
+<h2>四、資料分享與第三方</h2>
+<p>我們不會將您的個人身份資訊或可識別的 GA 數據主動分享或出售給任何第三方，除非在以下情況：</p>
+<ul>
+    <li><strong>服務供應商：</strong> 為了提供服務必須使用的第三方服務，如 Google Cloud Platform, Google APIs, LINE Platform。</li>
+    <li><strong>法律要求：</strong> 遵循有效的法律程序。</li>
+    <li><strong>業務轉移：</strong> 在合併、收購等情況下，確保接收方遵守同等保護標準。</li>
+</ul>
+
+<h2>五、您的權利</h2>
+<p>根據相關法律法規 (例如台灣個人資料保護法)，您對您的個人資料擁有查詢、閱覽、複製、補充、更正、停止蒐集/處理/利用及刪除等權利。如欲行使權利，請透過下方聯繫方式與我們聯繫。</p>
+
+<h2>六、兒童隱私</h2>
+<p>本服務並非為兒童設計，我們不會故意收集兒童的個人資訊。</p>
+
+<h2>七、隱私權政策的變更</h2>
+<p>我們可能會不時修訂本政策。如有重大變更，我們會透過您提供的 Email 或在本服務網站上公告。建議您定期查看。您在變更生效後繼續使用本服務，即視為您已接受修改後的政策。</p>
+
+<h2>八、聯絡我們</h2>
+<p>如果您對本隱私權政策有任何疑問，請透過以下方式與我們聯繫：</p>
+<p>Email: backtrue@gmail.com</p>
+
+{% endblock %}

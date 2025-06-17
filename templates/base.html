@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    {# --- Mobile First 的基礎 --- #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    {# --- 網站標題 --- #}
+    {# 允許子模板覆寫 title，提供一個預設值 #}
+    <title>{% block title %}報數據 - 即時獲得電商業績流量數據{% endblock %}</title>
+
+    {# --- Meta Description (網站描述) --- #}
+    {# 提供一個預設描述，可以讓子模板覆寫 #}
+    <meta name="description" content="報數據是一款電商老闆都要使用的自動化工具，幫助您輕鬆從 Google Analytics 4 (GA4) 得知即時數據。連結您的 GA 和 LINE 帳號，定時透過 LINE 接收工作階段、總收益等重要報告。">
+
+    {# --- Open Graph Tags (用於社群媒體分享預覽) --- #}
+    <meta property="og:title" content="{% block og_title %}報數據 - 即時獲得電商業績流量數據{% endblock %}">
+    <meta property="og:description" content="報數據是一款電商老闆都要使用的自動化工具，幫助您輕鬆從 Google Analytics 4 (GA4) 得知即時數據。連結您的 GA 和 LINE 帳號，定時透過 LINE 接收工作階段、總收益等重要報告。">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://thinkwithblack.com{{ request.path }}">
+    <meta property="og:image" content="/baodata.jpeg">
+    <meta property="og:locale" content="zh_TW">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "報數據",
+      "description": "報數據是一款電商老闆都要使用的自動化工具，幫助您輕鬆從 Google Analytics 4 (GA4) 得知即時數據。連結您的 GA 和 LINE 帳號，定時透過 LINE 接收工作階段、總收益等重要報告。",
+      "url": "https://thinkwithblack.com"
+    }
+    </script>
+
+
+    {# --- 連結 CSS --- #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    {# --- 給子模板擴充 Head (例如加入頁面特定的 CSS 或 Meta) --- #}
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    {# --- 主要內容容器 --- #}
+    <div class="container">
+
+        {# --- Flash 訊息顯示區 --- #}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-messages"> {# 給整個 flash 訊息區塊一個 class，方便 JS 選取 #}
+            {% for category, message in messages %}
+              {# category 會是 'success', 'error', 'info', 'warning' #}
+              <div class="flash-{{ category }}">{{ message|safe }}</div> {# 使用 safe 允許 flash 中的 HTML 連結 #}
+            {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        {# --- Flash 訊息顯示區結束 --- #}
+
+        {# --- 子模板的主要內容會插入到這裡 --- #}
+        {% block content %}{% endblock %}
+
+    </div> {# End of .container #}
+
+    {# --- 頁腳 (Footer) --- #}
+    <footer class="footer">
+        <p>
+            <a href="{{ url_for('privacy_policy') }}" rel="nofollow">隱私權政策</a> |
+            <a href="{{ url_for('terms_of_service') }}" rel="nofollow">服務條款</a>
+        </p>
+        {# 更新頁腳中的應用程式名稱 #}
+        <p>&copy; {{ current_year if current_year else '2025' }} 報數據 (由 煜言顧問有限公司(TW) 及 <a href="https://toldyou.co" target="_blank">燈言顧問株式会社(JP)</a> 提供). All Rights Reserved.</p>
+        {# 如果需要，可以在 app.py 的路由中傳遞 current_year #}
+    </footer>
+    {# --- Footer 結束 --- #}
+
+    {# --- 全域的 JavaScript (如果需要的話) --- #}
+    {# 將 app.js 放在 body 結尾前，確保 DOM 元素已載入 #}
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+
+    {# --- 給子模板擴充 Body 結尾 (例如頁面特定的 JS) --- #}
+    {% block body_extra %}{% endblock %}
+</body>
+</html>

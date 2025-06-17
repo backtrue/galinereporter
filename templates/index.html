@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GA->LINE 報告器設定</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>GA->LINE 報告器設定</h1>
+
+    {# --- Flash 訊息顯示 --- #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          {# 使用 category 作為 CSS class #}
+          <div class="flash-{{ category }}">{{ message }}</div> {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <p>
+        <a href="{{ url_for('login_google') }}">1. {% if google_linked %}重新連結 Google{% else %}連結 Google{% endif %}</a>
+        <a href="{{ url_for('login_line') }}">2. {% if line_linked %}重新連結 LINE{% else %}連結 LINE{% endif %}</a>
+        <a href="{{ url_for('logout_all_debug') }}">清除所有設定 (Debug)</a>
+    </p>
+
+    {# --- GA 資源選擇器 --- #}
+    {% if show_ga_selector %}
+        <div class="info-box"> <p>偵測到您已登入 Google，請選擇要使用的 GA4 資源：</p>
+            {% if ga_properties %}
+                <form method="POST" action="{{ url_for('set_ga_property') }}">
+                    <select name="property_id" required>
+                        <option value="">-- 請選擇 GA4 資源 --</option>
+                        {% for prop in ga_properties %}
+                            <option value="{{ prop.id }}">{{ prop.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">設定此 GA 資源</button>
+                </form>
+            {% elif not ga_list_error %}
+                 <p>正在載入資源清單...</p>
+            {% else %}
+                <p>無法載入資源清單。請確認您的 Google 帳號有 GA4 存取權限，或稍後再試。</p>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {# --- 時區選擇器 --- #}
+     <div class="info-box"> <form method="POST" action="{{ url_for('set_timezone') }}">
+             <label for="timezone">設定報表時區 (目前: {{ current_timezone }}):</label>
+             <select name="timezone" id="timezone" required>
+                 {% for tz in timezones %}
+                     <option value="{{ tz }}" {% if tz == current_timezone %}selected{% endif %}>{{ tz }}</option>
+                 {% endfor %}
+             </select>
+             <button type="submit">更新時區</button>
+         </form>
+     </div>
+
+    <p>
+        <a href="{{ url_for('test_google_token') }}">3. (測試) 取得 Google Access Token</a>
+        <a href="{{ url_for('test_ga_report_manual', date_mode='yesterday') }}">4a. (測試) 手動執行昨天報表</a> <a href="{{ url_for('test_ga_report_manual', date_mode='today') }}">4b. (測試) 手動執行今日報表</a> </p>
+
+    <div class="status">
+        <h2>目前儲存的設定:</h2>
+        <p>Google 連結: {% if google_linked %}<span class="status-success">已連結</span>{% else %}<span class="status-warning">未連結</span>{% endif %}</p> {% if google_linked and config and config.google_user_email_debug %}
+        <p><small>(綁定帳號: {{ config.google_user_email_debug }})</small></p>
+        {% endif %}
+
+        <p>LINE 連結: {% if line_linked %}<span class="status-success">已連結 (User ID: {{ config.line_user_id if config else 'N/A' }})</span>{% else %}<span class="status-warning">未連結</span>{% endif %}</p>
+        {% if line_linked and config and config.line_display_name %}
+         {% endif %}
+
+        <p>GA4 Property ID: {% if ga_property_set %}<span class="status-success">{{ config.ga_property_id }}</span>{% else %}<span class="status-warning">未設定</span>{% endif %}</p>
+        <p>時區: <span class="status-success">{{ current_timezone }}</span></p>
+
+        {# --- 測試結果顯示區 --- #}
+        {% if google_access_token_test_result %}
+            <p><strong>Google Access Token 測試結果:</strong></p>
+            <div class="token {% if '成功' in google_access_token_test_result %}status-success{% else %}status-error{% endif %}">{{ google_access_token_test_result | safe }}</div>
+        {% endif %}
+
+        {% if ga_report_test_result %}
+            <p><strong>上次手動測試結果:</strong></p>
+            <div class="token {% if '成功' in ga_report_test_result and '失敗' not in ga_report_test_result %}status-success{% elif '失敗' in ga_report_test_result %}status-error{% else %}status-info{% endif %}">{{ ga_report_test_result | safe }}</div>
+        {% endif %}
+    </div>
+</body>
+</html>

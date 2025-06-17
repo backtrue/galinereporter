@@ -1,0 +1,274 @@
+/* static/style.css */
+
+:root {
+    /* --- 配色方案 --- */
+    --primary-deep-blue: #6295D9;   /* 主色 - 深藍 */
+    --primary-medium-blue: #73A9D9; /* 主色 - 中藍 */
+    --primary-light-blue: #8BB4D9;  /* 主色 - 淺藍 */
+    --primary-sky-blue: #A2DCF2;    /* 主色 - 天空藍 */
+    
+    --background-main: #F2F2F2;    /* 整體頁面背景 - 淺灰 */
+    --surface-card: #FFFFFF;       /* 卡片、區塊背景 - 純白 */
+    
+    --text-primary: #2c3e50;       /* 主要文字、標題 - 深藍灰 */
+    --text-secondary: #555e67;     /* 次要文字 - 稍淺的灰藍 */
+    --text-subtle: #7f8c8d;        /* 更次要的文字、輔助說明 - 灰 */
+    --text-on-primary: #FFFFFF;    /* 在主色按鈕上的文字顏色 - 白色 */
+
+    --border-color: #dce4ec;       /* 邊框顏色 - 淡藍灰 */
+    --border-dashed: #bdc3c7;      /* Token 區塊的虛線邊框 */
+
+    /* --- 語意化顏色 --- */
+    --color-success: #27ae60;        /* 成功 - 綠色 */
+    --color-warning: #f39c12;        /* 警告 - 橘色 */
+    --color-error: #e74c3c;          /* 錯誤 - 紅色 */
+    
+    --color-success-bg: #e8f5e9; /* 成功訊息背景 */
+    --color-warning-bg: #fff3cd; /* 警告訊息背景 */
+    --color-error-bg: #f8d7da;   /* 錯誤訊息背景 */
+    --color-info-bg: #eaf6ff;    /* 資訊提示背景 (使用淺藍系) */
+    --color-info-border: var(--primary-light-blue);
+    --color-info-text: var(--primary-deep-blue);
+}
+
+/* --- 基礎重設與全域設定 --- */
+*, *::before, *::after {
+    box-sizing: border-box; /* 更直覺的盒模型 */
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang TC", "Hiragino Sans GB", "Microsoft JhengHei", sans-serif;
+    font-size: 16px; /* 手機上舒適的基礎字體大小 */
+    line-height: 1.6;
+    color: var(--text-primary);
+    background-color: var(--background-main);
+}
+
+.container {
+    padding: 20px 15px; /* 上下 20px，左右 15px */
+    max-width: 600px; /* 手機上舒適，桌面版內容不會過寬 */
+    margin: 0 auto; /* 讓內容在較大螢幕上居中 */
+}
+
+/* Styles for the app purpose description section */
+.app-purpose-description h2 {
+    font-size: 14px; /* 設定 H2 字體大小為 14px */
+    /* 您也可以在此調整其他 H2 樣式，例如 margin-bottom */
+}
+
+.app-purpose-description p {
+    font-size: 12px; /* 設定段落字體大小為 12px */
+    /* 您可以調整行高 (line-height) 或段落之間的間距 (margin-bottom) */
+    line-height: 1.6; /* 範例：設定行高增加可讀性 */
+    margin-bottom: 10px; /* 範例：設定段落下方間距 */
+}
+
+/* Style for the specific last paragraph within the description */
+.app-purpose-description p:last-child {
+    font-size: 8px; /* 設定最後一個段落的字體大小為 8px */
+    color: gray; /* 設定字體顏色為灰色 */
+    /* 您可以調整與上一個段落的間距 */
+    margin-top: 15px; /* 範例：設定上方間距 */
+}
+
+
+/* --- 標題 --- */
+h1 {
+    color: var(--primary-deep-blue); /* 使用最深的藍色作為主標題 */
+    border-bottom: 3px solid var(--primary-medium-blue); /* 加粗底線 */
+    padding-bottom: 12px;
+    font-size: 1.9em; /* 稍微加大 */
+    margin-top: 0;
+    margin-bottom: 25px; /* 增加與下方內容的間距 */
+    text-align: center; /* 標題居中 */
+}
+
+h2 {
+    color: var(--text-primary);
+    font-size: 1.3em; /* 區塊標題調整 */
+    margin-top: 0; /* 區塊內的第一個 H2 頂部無邊距 */
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* --- 段落與連結 --- */
+p {
+    margin-top: 0; /* 段落預設頂部無邊距 */
+    margin-bottom: 15px;
+    color: var(--text-secondary);
+}
+
+a {
+    color: var(--primary-deep-blue);
+    text-decoration: none;
+    font-weight: 500; /* 不用太粗，讓按鈕更突出 */
+}
+a:hover, a:focus {
+    color: var(--primary-medium-blue);
+    text-decoration: underline;
+}
+
+/* --- 按鈕 --- */
+.button, button {
+    display: inline-block;
+    padding: 14px 22px;   /* 增大按鈕的垂直和水平 padding，增加觸控面積 */
+    margin: 10px 5px 10px 0; /* 增加按鈕上下外邊距 */
+    font-size: 1em;
+    font-weight: bold;
+    color: var(--text-on-primary);
+    background-color: var(--primary-deep-blue);
+    border: none;
+    border-radius: 8px; /* 更圓潤的邊角 */
+    text-align: center;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.2s ease-in-out, transform 0.1s ease; /* 加入 transform 過渡 */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15); /* 給按鈕一點立體感 */
+}
+.button:hover, button:hover {
+    background-color: var(--primary-medium-blue);
+    transform: translateY(-1px); /* 滑過時輕微上移 */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+.button:active, button:active { /* 點擊時的效果 */
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+
+.button-danger { background-color: var(--color-error); }
+.button-danger:hover { background-color: #c0392b; }
+
+.button-link { /* 用於「(切換/重新連結)」這種文字型連結 */
+    background: none !important; border: none !important;
+    color: var(--primary-deep-blue) !important; padding: 2px 4px !important; /* 微調 padding */
+    margin: 0 0 0 8px !important; font-weight: normal; text-decoration: underline;
+    cursor: pointer; box-shadow: none; font-size: 0.9em;
+}
+.button-link:hover { color: var(--primary-medium-blue) !important; }
+
+/* --- 表單元素 --- */
+select, input[type="text"], input[type="email"] { /* 預留給未來可能的輸入框 */
+    width: 100%;
+    padding: 14px; /* 增加 padding */
+    margin-top: 8px; /* 與 label 的間距 */
+    margin-bottom: 20px;
+    font-size: 1em;
+    border-radius: 6px; /* 調整圓角 */
+    border: 1px solid var(--border-color);
+    box-sizing: border-box;
+    background-color: var(--surface-card); /* 輸入框背景也用白色 */
+}
+select:focus, input:focus { /* 輸入框獲取焦點時的樣式 */
+    border-color: var(--primary-medium-blue);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--primary-sky-blue); /* 焦點時的陰影更明顯 */
+}
+
+/* --- Flash 訊息樣式 (增強對比和間距) --- */
+.flash-messages { margin-bottom: 25px; }
+.flash-success { color: var(--color-success); background-color: var(--color-success-bg); border: 1px solid var(--color-success); padding: 15px; margin-bottom:10px; border-radius: 6px; }
+.flash-error   { color: var(--color-error); background-color: var(--color-error-bg); border: 1px solid var(--color-error); padding: 15px; margin-bottom:10px; border-radius: 6px; }
+.flash-info    { color: var(--color-info-text); background-color: var(--color-info-bg); border: 1px solid var(--color-info-border); padding: 15px; margin-bottom:10px; border-radius: 6px; }
+.flash-warning { color: var(--color-warning); background-color: var(--color-warning-bg); border: 1px solid var(--color-warning); padding: 15px; margin-bottom:10px; border-radius: 6px; }
+
+/* --- 資訊區塊/卡片樣式 --- */
+.info-box, .section {
+    background-color: var(--surface-card);
+    border: 1px solid var(--border-color);
+    padding: 20px; /* 卡片內邊距 */
+    margin-bottom: 25px; /* 卡片間距 */
+    border-radius: 10px; /* 更大的圓角 */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08); /* 更明顯的陰影 */
+}
+.info-box label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.95em;
+}
+.info-box p:last-child { margin-bottom: 0; } /* 卡片內最後一個段落無下邊距 */
+
+/* 儀表板的動作按鈕 */
+.section.actions .button {
+    display: block; width: 100%; box-sizing: border-box;
+    margin-left: 0; margin-right: 0; margin-bottom: 15px;
+    padding: 16px; /* 讓主要操作按鈕更大 */
+    font-size: 1.1em;
+}
+.section.actions .button:last-child { margin-bottom: 0; }
+
+/* 導覽區塊 */
+.section.navigation {
+    text-align: center; background-color: transparent; box-shadow: none;
+    padding-top: 15px; border-top: 1px dashed var(--border-color); margin-top: 35px;
+}
+.section.navigation .button {
+    background-color: var(--primary-light-blue); font-weight: 500;
+}
+.section.navigation .button:hover { background-color: var(--primary-medium-blue); }
+
+/* Token 顯示區塊 */
+.token {
+    word-wrap: break-word; background-color: var(--neutral-background);
+    padding: 12px; margin-top: 8px; margin-bottom: 15px;
+    font-size: 0.9em; border-radius: 6px;
+    font-family: "SF Mono", "Consolas", "Courier New", Courier, monospace;
+    white-space: pre-wrap; border: 1px dashed var(--border-dashed); overflow-x: auto;
+}
+
+/* 狀態文字顏色 */
+.status-success { color: var(--color-success); font-weight: bold; }
+.status-warning { color: var(--color-warning); font-weight: bold; }
+.status-error   { color: var(--color-error); font-weight: bold; } /* 用於 token 區塊的錯誤 */
+.status-info    { color: var(--primary-deep-blue); font-weight: bold; }
+
+
+/* --- 桌面版微調 --- */
+@media (min-width: 768px) {
+    body { font-size: 17px; }
+    .container { padding: 40px; }
+    h1 { font-size: 2.4em; }
+    h2 { font-size: 1.6em; }
+    .info-box label { display: inline-block; width: auto; margin-right: 10px; margin-bottom: 0; }
+    select { width: auto; min-width: 300px; }
+    button { margin-left: 10px; } /* 表單中的按鈕 */
+    .section.actions .button { display: inline-block; width: auto; margin-right: 10px; }
+}
+
+/* Admin table specific styles */
+.admin-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+.admin-table th, .admin-table td { border: 1px solid var(--border-color, #ddd); padding: 8px 10px; text-align: left; vertical-align: top; }
+.admin-table th { background-color: var(--neutral-background, #f2f2f2); font-weight: bold; color: var(--text-primary, #333); }
+.admin-table tbody tr:nth-child(even) { background-color: #f9f9f9; }
+.admin-table tbody tr:hover { background-color: var(--primary-sky-blue, #e0efff); }
+.button-small { padding: 5px 10px; font-size: 0.8em; }
+
+.footer {
+    text-align: center; /* 讓頁腳內的文字水平置中 */
+    padding: 20px 0;    /* 在頁腳上下增加一些內邊距，使其與內容分開 */
+    margin-top: 40px;   /* 在頁腳頂部增加外邊距，使其與主要內容有更明顯的分隔 */
+    border-top: 1px solid #eeeeee; /* 在頁腳頂部增加一條細線作為視覺分隔 */
+    font-size: 0.9em;   /* 可以稍微調整字體大小 */
+    color: #555555;     /* 設定文字顏色，使其不過於突兀 */
+}
+
+.footer p {
+    margin-bottom: 10px; /* 段落之間的間距 */
+}
+
+.footer p:last-child {
+    margin-bottom: 0; /* 最後一個段落不需要底部間距 */
+}
+
+.footer a {
+    color: #3498db; /* 連結顏色，可以根據您的主題調整 */
+    text-decoration: none; /* 移除連結底線 */
+}
+
+.footer a:hover {
+    text-decoration: underline; /* 滑鼠懸停時顯示底線 */
+}
