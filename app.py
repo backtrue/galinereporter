@@ -348,11 +348,17 @@ def login_line():
     session['line_oauth_state'] = state
 
     # 動態決定 LINE 重定向 URI
-    if request.host.endswith('.repl.co'):
+    current_host = request.host
+    print(f"當前 host: {current_host}")
+    
+    if current_host.endswith('.repl.co'):
         # Preview 模式
-        redirect_uri = f"https://{request.host}/line-callback"
-    else:
+        redirect_uri = f"https://{current_host}/line-callback"
+    elif current_host.endswith('.replit.app'):
         # Production 模式
+        redirect_uri = f"https://{current_host}/line-callback"
+    else:
+        # fallback
         redirect_uri = 'https://galinereporter.replit.app/line-callback'
 
     print(f"LINE OAuth - 使用重定向 URI: {redirect_uri}")
@@ -395,11 +401,17 @@ def line_callback():
         return redirect(url_for('settings'))
 
     # 動態決定 LINE 重定向 URI（必須與授權時一致）
-    if request.host.endswith('.repl.co'):
+    current_host = request.host
+    print(f"Callback 當前 host: {current_host}")
+    
+    if current_host.endswith('.repl.co'):
         # Preview 模式
-        redirect_uri = f"https://{request.host}/line-callback"
-    else:
+        redirect_uri = f"https://{current_host}/line-callback"
+    elif current_host.endswith('.replit.app'):
         # Production 模式
+        redirect_uri = f"https://{current_host}/line-callback"
+    else:
+        # fallback
         redirect_uri = 'https://galinereporter.replit.app/line-callback'
 
     print(f"LINE Token Exchange - 使用重定向 URI: {redirect_uri}")
