@@ -113,7 +113,7 @@ def create_checkout_session():
 # === Stripe Webhook ===
 import json
 @app.route('/api/stripe/webhook', methods=['POST'])
-def stripe_webhook():
+def handle_stripe_webhook():
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature')
     event = None
@@ -335,7 +335,7 @@ with app.app_context():
 # === APScheduler 啟動與註冊每月補滿任務 ===
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone='Asia/Taipei')
-    # 每月 1 號 00:10 執行
+    # 每月 1 號 00:10 執行 
     scheduler.add_job(refill_all_pro_members_credits, CronTrigger(day=1, hour=0, minute=10))
     scheduler.start()
     print("APScheduler 啟動，已註冊每月 1 號自動補滿 pro 會員 credits 任務。")
@@ -640,7 +640,7 @@ def create_credit_checkout_session():
 
 # === Stripe Webhook 補強推薦獎勵 ===
 @app.route('/api/stripe/webhook', methods=['POST'])
-def stripe_webhook():
+def handle_stripe_webhook():
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature')
     event = None
