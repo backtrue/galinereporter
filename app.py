@@ -96,17 +96,17 @@ if os.getenv('REPL_OWNER') and os.getenv('REPL_SLUG'):
     default_redirect_uri = f"{preview_url}/google-callback"
 else:
     # Production 模式
-    default_redirect_uri = 'https://galinereporter--backtrue.repl.co/google-callback'
+    default_redirect_uri = 'https://galinereporter.replit.app/google-callback'
 
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', default_redirect_uri); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 LINE_CHANNEL_ID = os.getenv('LINE_CHANNEL_ID'); LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET'); 
 # 設定 LINE 重新導向 URI，支援 preview 和 production 模式
 if os.getenv('REPL_OWNER') and os.getenv('REPL_SLUG'):
     # Preview 模式
-    default_line_redirect_uri = f"{preview_url}/line-callback"
+    default_line_redirect_uri = f"https://{preview_url}/line-callback"
 else:
     # Production 模式
-    default_line_redirect_uri = 'https://galinereporter--backtrue.repl.co/line-callback'
+    default_line_redirect_uri = 'https://galinereporter.replit.app/line-callback'
 
 LINE_REDIRECT_URI = os.getenv('LINE_REDIRECT_URI', default_line_redirect_uri)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
@@ -330,7 +330,7 @@ def google_callback():
              elif config: config.google_refresh_token_encrypted = None; db.session.commit(); print(f"錯誤：{user_email} 未取得 Refresh Token 且DB中無有效Token。"); flash("無法取得 Google Refresh Token，請重試。", "error")
              else: print(f"錯誤：{user_email} 為新用戶但未取得 Refresh Token。"); flash("無法取得 Google Refresh Token，請確保同意所有權限。", "error")
         return redirect(url_for('settings'))
-    except requests.exceptions.RequestException as e: print(f"交換 Google Code 失敗: {e}"); flash("與 Google 交換憑證錯誤。", "error"); return redirect(url_for('settings'))
+    except requests.exceptions.RequestException as e: print(f"交換 Google Code 失敗: {e}"); flash("與 Google交換憑證錯誤。", "error"); return redirect(url_for('settings'))
     except Exception as e: print(f"處理 Google Callback 未知錯誤: {e}\n{traceback.format_exc()}"); flash("處理 Google 回應未知錯誤。", "error"); return redirect(url_for('settings'))
 
 @app.route('/login/line')
@@ -350,13 +350,13 @@ def login_line():
     # 動態決定 LINE 重定向 URI
     current_host = request.host
     print(f"當前 host: {current_host}")
-    
+
     if current_host.endswith('.repl.co'):
         # Preview 模式
         redirect_uri = f"https://{current_host}/line-callback"
     elif current_host.endswith('.replit.app'):
         # Production 模式
-        redirect_uri = f"https://{current_host}/line-callback"
+        redirect_uri = f"https://galinereporter.replit.app/line-callback"
     else:
         # fallback
         redirect_uri = 'https://galinereporter.replit.app/line-callback'
@@ -403,13 +403,13 @@ def line_callback():
     # 動態決定 LINE 重定向 URI（必須與授權時一致）
     current_host = request.host
     print(f"Callback 當前 host: {current_host}")
-    
+
     if current_host.endswith('.repl.co'):
         # Preview 模式
         redirect_uri = f"https://{current_host}/line-callback"
     elif current_host.endswith('.replit.app'):
         # Production 模式
-        redirect_uri = f"https://{current_host}/line-callback"
+        redirect_uri = 'https://galinereporter.replit.app/line-callback'
     else:
         # fallback
         redirect_uri = 'https://galinereporter.replit.app/line-callback'
