@@ -487,7 +487,7 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             end_date_for_avg = target_date - datetime.timedelta(days=1); start_date_for_avg = end_date_for_avg - datetime.timedelta(days=6)
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
-                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None); count_hist_days = len(historical_snapshots)
+                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None); count_hist_days = len(historicalsnapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
                 if current_sessions > avg_sessions * 1.05: sessions_insight = " (📈 高於平均)"
@@ -1280,6 +1280,144 @@ def terms_of_service(): # <--- 確保函式名稱是 terms_of_service
     effective_date = datetime.date.today().strftime('%Y-%m-%d') # 或者一個固定的日期
     current_year = datetime.date.today().year
     return render_template('terms_of_service.html', effective_date=effective_date, current_year=current_year)
+
+# --- Google OAuth 認證路由 ---
+@app.route('/login/google')
+def login_google():
+    """Google OAuth 登入"""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        flash('Google OAuth 未設定，請聯繫管理員。', 'error')
+        return redirect(url_for('index'))
+
+    # 建立 OAuth flow
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/o/oauth2/token",
+                "redirect_uris": [url_for('google_callback', _external=True)]
+            }
+        },
+        scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
+    )
+
+    # 設定 redirect URI
+    flow.redirect_uri = url_for('google_callback', _external=True)
+
+    # 獲取授權 URL
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+
+    # 將 state 存入 session
+    session['state'] = state
+
+    return redirect(authorization_url)
+
+@app.route('/google-callback')
+def google_callback():
+    """Google OAuth 回調處理"""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        flash('Google OAuth 未設定，請聯繫管理員。', 'error')
+        return redirect(url_for('index'))
+
+    # 驗證 state
+    if request.args.get('state') != session.get('state'):
+        flash('認證失敗，請重試。', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        # 建立 OAuth flow
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://accounts.google.com/o/oauth2/token",
+                    "redirect_uris": [url_for('google_callback', _external=True)]
+                }
+            },
+            scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
+        )
+
+        flow.redirect_uri = url_for('google_callback', _external=True)
+
+        # 獲取令牌
+        flow.fetch_token(authorization_response=request.url)
+
+        # 獲取用戶信息
+        credentials = flow.credentials
+        user_info_request = requests.get(
+            'https://www.googleapis.com/oauth2/v2/userinfo',
+            headers={'Authorization': f'Bearer {credentials.token}'}
+        )
+        user_info = user_info_request.json()
+
+        # 檢查或創建用戶
+        user_email = user_info.get('email')
+        if not user_email:
+            flash('無法獲取用戶 email，請重試。', 'error')
+            return redirect(url_for('index'))
+
+        user_config = UserConfig.query.filter_by(google_email=user_email).first()
+        if not user_config:
+            # 創建新用戶
+            referral_code = request.args.get('ref')
+            user_config = UserConfig(
+                google_email=user_email,
+                google_refresh_token_encrypted=encrypt_token(credentials.refresh_token) if credentials.refresh_token else None,
+                credits=FREE_SIGNUP_CREDITS
+            )
+
+            # 處理推薦碼
+            if referral_code:
+                referrer = UserConfig.query.filter_by(referral_code=referral_code).first()
+                if referrer:
+                    user_config.referred_by = referral_code
+                    # 給推薦人獎勵
+                    referrer.referral_credits += REFERRAL_AWARD_CREDITS
+                    referrer.credits += REFERRAL_AWARD_CREDITS
+                    log_credit_change(referrer, REFERRAL_AWARD_CREDITS, 'referral', f'推薦用戶: {user_email}')
+
+                    # 記錄推薦日誌
+                    referral_log = ReferralLog(
+                        referrer_code=referral_code,
+                        referred_email=user_email,
+                        credits_awarded=REFERRAL_AWARD_CREDITS
+                    )
+                    db.session.add(referral_log)
+
+            db.session.add(user_config)
+            db.session.commit()
+
+            # 生成推薦碼
+            get_or_create_referral_code(user_config)
+
+            flash(f'歡迎 {user_email}！您已成功註冊。', 'success')
+        else:
+            # 更新現有用戶的 refresh token
+            if credentials.refresh_token:
+                user_config.google_refresh_token_encrypted = encrypt_token(credentials.refresh_token)
+                db.session.commit()
+            flash(f'歡迎回來 {user_email}！', 'success')
+
+        # 登入用戶
+        session['user_email'] = user_email
+
+        return redirect(url_for('index'))
+
+    except Exception as e:
+        print(f"Google 認證錯誤: {e}")
+        flash('Google 認證失敗，請重試。', 'error')
+        return redirect(url_for('index'))
+
+# --- Google Analytics 報告生成 ---
+def generate_ga_report(user_config):
+    pass
 
 # --- 執行 Flask App ---
 if __name__ == '__main__':
