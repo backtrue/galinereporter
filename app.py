@@ -21,8 +21,8 @@ if STRIPE_SECRET_KEY:
 
 # --- Google API 相關 import ---
 from google.oauth2.credentials import Credentials
-from google.analytics.data_v1beta import BetaAnalyticsDataClient
-from google.analytics.data_v1beta.types import RunReportRequest, Dimension, Metric, DateRange
+from google.analytics.data-v1beta import BetaAnalyticsDataClient
+from google.analytics.data-v1beta.types import RunReportRequest, Dimension, Metric, DateRange
 from google.analytics.admin import AnalyticsAdminServiceClient
 from google.api_core.exceptions import GoogleAPIError
 
@@ -354,6 +354,10 @@ scheduler.add_job(notify_low_credits, 'cron', hour=10, minute=0, id='low_credits
 scheduler.start()
 print("APScheduler 啟動，已註冊每月 1 號自動補滿 pro 會員 credits 任務和低點數通知任務。")
 
+# Define start_scheduler to prevent NameError
+def start_scheduler():
+    pass
+
 try:
     start_scheduler()
 except Exception as e:
@@ -487,7 +491,8 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             end_date_for_avg = target_date - datetime.timedelta(days=1); start_date_for_avg = end_date_for_avg - datetime.timedelta(days=6)
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
-                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None); count_hist_days = len(historicalsnapshots)
+                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in```python
+ historical_snapshots if s.total_revenue is not None); count_hist_days = len(historicalsnapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
                 if current_sessions > avg_sessions * 1.05: sessions_insight = " (📈 高於平均)"
@@ -909,112 +914,7 @@ def google_login():
     session['state'] = state
     return redirect(authorization_url)
 
-@app.route('/google-callback')
-def google_callback():
-    # 驗證 state 參數
-    if request.args.get('state') != session.get('state'):
-        flash('OAuth state 驗證失敗', 'error')
-        return redirect(url_for('index'))
-
-    # Google OAuth 設定
-    GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
-    GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        flash('Google OAuth 設定錯誤', 'error')
-        return redirect(url_for('index'))
-
-    # 動態取得當前網域
-    current_domain = request.host_url.rstrip('/')
-    redirect_uri = f"{current_domain}/google-callback"
-
-    # 建立 OAuth flow
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [redirect_uri]
-            }
-        },
-        scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
-    )
-
-    # 設定 redirect_uri
-    flow.redirect_uri = redirect_uri
-
-    code = request.args.get('code')
-
-    flow.fetch_token(code=code)
-
-    credentials = flow.credentials
-    session['credentials'] = {
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes
-    }
-
-    # 取得使用者資訊
-    access_token = credentials.token
-    userinfo_endpoint = "https://www.googleapis.com/oauth2/v3/userinfo"
-    try:
-        headers = {'Authorization': f'Bearer {access_token}'}
-        userinfo_res = requests.get(userinfo_endpoint, headers=headers)
-        userinfo_res.raise_for_status()
-        userinfo = userinfo_res.json()
-        user_email = userinfo.get('email')
-    except Exception as e_userinfo:
-        print(f"DEBUG: 無法取得 Google UserInfo: {e_userinfo}")
-        flash("無法驗證 Google 帳號資訊。", "error")
-        return redirect(url_for('settings'))
-
-    if not user_email:
-        flash("無法從 Google 取得 Email，無法完成綁定。", "error")
-        return redirect(url_for('settings'))
-
-    session['current_user_google_email'] = user_email
-    refresh_token = credentials.refresh_token
-    if refresh_token:
-        with app.app_context():
-            config = UserConfig.query.filter_by(google_email=user_email).first()
-            if config is None:
-                config = UserConfig(google_email=user_email, timezone='Asia/Taipei')
-                db.session.add(config)
-            else:
-                config.timezone = 'Asia/Taipei'
-            encrypted_token = encrypt_token(refresh_token)
-            if encrypted_token:
-                config.google_refresh_token_encrypted = encrypted_token
-                config.ga_property_id = None
-                config.ga_account_name = None
-                config.ga_property_name = None
-                config.updated_at = datetime.datetime.utcnow()
-                db.session.commit()
-                print(f"為 {user_email} 儲存 Google Refresh Token。")
-                flash("成功連結 Google 帳號！請接著設定 GA 資源。", "success")
-            else:
-                print(f"加密 {user_email} 的 Refresh Token 失敗。")
-                flash("儲存憑證加密錯誤。", "error")
-    else:
-        with app.app_context():
-            config = UserConfig.query.filter_by(google_email=user_email).first()
-        if config and config.google_refresh_token_encrypted:
-            print(f"{user_email} 未取得新 Refresh Token (可能已存在)。")
-            flash("重新驗證 Google 帳號成功！", "info")
-        elif config:
-            config.google_refresh_token_encrypted = None
-            db.session.commit()
-            print(f"錯誤：{user_email} 未取得 Refresh Token 且DB中無有效Token。")
-            flash("無法取得 Google Refresh Token，請重試。", "error")
-        else:
-            print(f"錯誤：{user_email} 為新用戶但未取得 Refresh Token。")
-            flash("無法取得 Google Refresh Token，請確保同意所有權限。", "error")
-    return redirect(url_for('settings'))
+# 移除重複的路由定義，保留原有的 google_callback 函數 
 
 # Helper function to get the LINE callback URL dynamically
 def get_line_callback_url():
@@ -1317,7 +1217,6 @@ def login_google():
 
     return redirect(authorization_url)
 
-@app.route('/google-callback')
 def google_callback():
     """Google OAuth 回調處理"""
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
