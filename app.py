@@ -112,8 +112,11 @@ def create_checkout_session():
 
 # === Stripe Webhook ===
 import json
-@app.route('/api/stripe/webhook', methods=['POST'])
-def handle_stripe_webhook():
+
+# 檢查是否已經註冊過此路由，避免重複註冊
+if 'handle_stripe_webhook' not in [rule.endpoint for rule in app.url_map.iter_rules()]:
+    @app.route('/api/stripe/webhook', methods=['POST'])
+    def handle_stripe_webhook():
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature')
     event = None
