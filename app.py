@@ -825,25 +825,25 @@ def member_area():
     if not current_user_email:
         flash('請先登入 Google 帳號。', 'warning')
         return redirect(url_for('login_google'))
-    
+
     config = UserConfig.query.filter_by(google_email=current_user_email).first()
     if not config:
         flash('找不到您的設定，請重新連結 Google 帳號。', 'error')
         return redirect(url_for('login_google'))
-    
+
     # 取得推薦碼
     referral_code = get_or_create_referral_code(config)
-    
+
     # 取得點數異動紀錄（增加到 10 筆）
     credits_logs = CreditLog.query.filter_by(user_email=config.google_email)\
                                  .order_by(CreditLog.created_at.desc())\
                                  .limit(10).all()
-    
+
     # 取得推薦獎勵紀錄（增加到 10 筆）
     referral_logs = ReferralLog.query.filter_by(referrer_code=config.referral_code)\
                                     .order_by(ReferralLog.created_at.desc())\
                                     .limit(10).all() if config.referral_code else []
-    
+
     return render_template('member_area.html',
                          config=config,
                          referral_code=referral_code,
