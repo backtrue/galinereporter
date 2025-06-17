@@ -118,59 +118,61 @@ if 'handle_stripe_webhook' not in [rule.endpoint for rule in app.url_map.iter_ru
     @app.route('/api/stripe/webhook', methods=['POST'])
     def handle_stripe_webhook():
         payload = request.data
-    sig_header = request.headers.get('Stripe-Signature')
-    event = None
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
-        )
-    except ValueError as e:
-        print(f"Webhook 錯誤: {e}"); return 'Invalid payload', 400
-    except stripe.error.SignatureVerificationError as e:
-        print(f"Webhook 簽名驗證失敗: {e}"); return 'Invalid signature', 400
+        sig_header = request.headers.get('Stripe-Signature')
+        event = None
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            print(f"Webhook 錯誤: {e}")
+            return 'Invalid payload', 400
+        except stripe.error.SignatureVerificationError as e:
+            print(f"Webhook 簽名驗證失敗: {e}")
+            return 'Invalid signature', 400
     # 根據 event['type'] 處理對應事件
-    if event['type'] == 'invoice.paid':
-        print('訂閱付款成功', event['data']['object'])
-        stripe_customer_id = event['data']['object']['customer']
-        # 先找 user
-        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
-        if not user:
-            # 若找不到，嘗試用 email 對應（第一次升級可能 stripe_customer_id 尚未寫入）
-            invoice_email = event['data']['object'].get('customer_email')
-            if not invoice_email and 'customer' in event['data']['object']:
-                # 進一步查詢 Stripe customer 資料
-                customer_obj = stripe.Customer.retrieve(stripe_customer_id)
-                invoice_email = customer_obj.email if customer_obj else None
-            if invoice_email:
-                user = UserConfig.query.filter_by(google_email=invoice_email).first()
-                if user:
-                    user.stripe_customer_id = stripe_customer_id
-        if user:
-            user.membership_type = 'pro'
-            refill_credits(user)
-            db.session.commit()
+        if event['type'] == 'invoice.paid':
+            print('訂閱付款成功', event['data']['object'])
+            stripe_customer_id = event['data']['object']['customer']
+            # 先找 user
+            user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+            if not user:
+                # 若找不到，嘗試用 email 對應（第一次升級可能 stripe_customer_id 尚未寫入）
+                invoice_email = event['data']['object'].get('customer_email')
+                if not invoice_email and 'customer' in event['data']['object']:
+                    # 進一步查詢 Stripe customer 資料
+                    customer_obj = stripe.Customer.retrieve(stripe_customer_id)
+                    invoice_email = customer_obj.email if customer_obj else None
+                if invoice_email:
+                    user = UserConfig.query.filter_by(google_email=invoice_email).first()
+                    if user:
+                        user.stripe_customer_id = stripe_customer_id
+            if user:
+                user.membership_type = 'pro'
+                refill_credits(user)
+                db.session.commit()
+            else:
+                print(f"找不到對應會員 (customer_id={stripe_customer_id})")
+        elif event['type'] == 'invoice.payment_failed':
+            print('訂閱付款失敗', event['data']['object'])
+            stripe_customer_id = event['data']['object']['customer']
+            user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+            if user:
+                # 進入待付款狀態，可自訂欄位或通知
+                pass
+        elif event['type'] == 'customer.subscription.deleted':
+            print('訂閱取消', event['data']['object'])
+            stripe_customer_id = event['data']['object']['customer']
+            user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
+            if user:
+                user.membership_type = 'free'
+                db.session.commit()
+        elif event['type'] == 'customer.subscription.updated':
+            print('訂閱狀態更新', event['data']['object'])
+            # 可根據狀態進一步同步會員狀態
         else:
-            print(f"找不到對應會員 (customer_id={stripe_customer_id})")
-    elif event['type'] == 'invoice.payment_failed':
-        print('訂閱付款失敗', event['data']['object'])
-        stripe_customer_id = event['data']['object']['customer']
-        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
-        if user:
-            # 進入待付款狀態，可自訂欄位或通知
-            pass
-    elif event['type'] == 'customer.subscription.deleted':
-        print('訂閱取消', event['data']['object'])
-        stripe_customer_id = event['data']['object']['customer']
-        user = UserConfig.query.filter_by(stripe_customer_id=stripe_customer_id).first()
-        if user:
-            user.membership_type = 'free'
-            db.session.commit()
-    elif event['type'] == 'customer.subscription.updated':
-        print('訂閱狀態更新', event['data']['object'])
-        # 可根據狀態進一步同步會員狀態
-    else:
-        print(f"收到未處理的 Stripe event: {event['type']}")
-    return '', 200
+            print(f"收到未處理的 Stripe event: {event['type']}")
+        return '', 200
 app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
 
 # --- 資料庫設定 (Cloud SQL) ---
