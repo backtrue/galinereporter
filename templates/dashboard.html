@@ -5,62 +5,24 @@
 {% block content %}
 <h1>報數據 - 儀表板</h1>
 
-<div class="section member-info">
-    <h2>會員資訊</h2>
+<div class="section member-summary">
+    <h2>會員狀態</h2>
     {% if config %}
-        <ul>
-            <li>會員等級：<strong>{{ config.membership_type|default('free')|upper }}</strong></li>
-            <li>剩餘 Credits：<strong>{{ config.credits }}</strong></li>
-            <li>我的推薦碼：<strong>{{ referral_code or '尚未產生' }}</strong></li>
-        </ul>
+        <div class="member-status-card">
+            <div class="status-item">
+                <span class="label">會員等級</span>
+                <span class="value membership-{{ config.membership_type|default('free') }}">{{ config.membership_type|default('free')|upper }}</span>
+            </div>
+            <div class="status-item">
+                <span class="label">剩餘 Credits</span>
+                <span class="value credits">{{ config.credits }}</span>
+            </div>
+            <div class="status-actions">
+                <a href="{{ url_for('member_area') }}" class="button button-primary">會員專區</a>
+            </div>
+        </div>
     {% else %}
         <p class="status-warning">尚未登入，無法取得會員資訊。</p>
-    {% endif %}
-</div>
-
-<div class="section credit-logs">
-    <h3>最近 5 筆點數異動紀錄</h3>
-    {% if credits_logs and credits_logs|length > 0 %}
-        <table class="mini-table">
-            <thead>
-                <tr><th>時間</th><th>異動</th><th>來源/用途</th><th>餘額</th><th>說明</th></tr>
-            </thead>
-            <tbody>
-                {% for log in credits_logs %}
-                <tr>
-                    <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                    <td>{% if log.delta > 0 %}<span style="color:green">+{{ log.delta }}</span>{% else %}<span style="color:red">{{ log.delta }}</span>{% endif %}</td>
-                    <td>{{ log.change_type }}</td>
-                    <td>{{ log.balance }}</td>
-                    <td>{{ log.description or '' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>尚無異動紀錄</p>
-    {% endif %}
-</div>
-
-<div class="section referral-logs">
-    <h3>最近 5 筆推薦獎勵紀錄</h3>
-    {% if referral_logs and referral_logs|length > 0 %}
-        <table class="mini-table">
-            <thead>
-                <tr><th>時間</th><th>被推薦人 Email</th><th>獎勵點數</th></tr>
-            </thead>
-            <tbody>
-                {% for log in referral_logs %}
-                <tr>
-                    <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                    <td>{{ log.referred_email }}</td>
-                    <td>{{ log.credits_awarded }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>尚無推薦紀錄</p>
     {% endif %}
 </div>
 <div class="section">

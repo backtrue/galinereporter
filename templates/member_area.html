@@ -1,0 +1,366 @@
+
+{% extends "base.html" %}
+
+{% block title %}會員專區 - 報數據{% endblock %}
+
+{% block content %}
+<h1>會員專區</h1>
+
+<div class="section member-info">
+    <h2>👤 會員資訊</h2>
+    {% if config %}
+        <div class="member-info-grid">
+            <div class="info-item">
+                <label>會員等級：</label>
+                <span class="membership-badge {% if config.membership_type == 'pro' %}pro-member{% else %}free-member{% endif %}">
+                    {{ config.membership_type|default('free')|upper }}
+                </span>
+            </div>
+            <div class="info-item">
+                <label>剩餘 Credits：</label>
+                <span class="credits-count">{{ config.credits }}</span>
+            </div>
+            <div class="info-item">
+                <label>我的推薦碼：</label>
+                <span class="referral-code">{{ referral_code or '尚未產生' }}</span>
+            </div>
+            <div class="info-item">
+                <label>會員信箱：</label>
+                <span class="member-email">{{ config.google_email }}</span>
+            </div>
+            <div class="info-item">
+                <label>註冊時間：</label>
+                <span class="join-date">{{ config.updated_at.strftime('%Y年%m月%d日') if config.updated_at else '未知' }}</span>
+            </div>
+        </div>
+        
+        {% if config.membership_type == 'free' %}
+        <div class="upgrade-prompt">
+            <h3>升級到 PRO 會員</h3>
+            <p>享受更多功能和每月 150 點數補充！</p>
+            <button class="button button-primary" onclick="upgradeSubscription()">立即升級</button>
+        </div>
+        {% endif %}
+    {% else %}
+        <p class="status-warning">尚未登入，無法取得會員資訊。</p>
+    {% endif %}
+</div>
+
+<div class="section credit-logs">
+    <h3>💰 最近 10 筆點數異動紀錄</h3>
+    {% if credits_logs and credits_logs|length > 0 %}
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>時間</th>
+                        <th>異動</th>
+                        <th>來源/用途</th>
+                        <th>餘額</th>
+                        <th>說明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in credits_logs %}
+                    <tr>
+                        <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            {% if log.delta > 0 %}
+                                <span class="credit-increase">+{{ log.delta }}</span>
+                            {% else %}
+                                <span class="credit-decrease">{{ log.delta }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="change-type">{{ log.change_type }}</span>
+                        </td>
+                        <td>{{ log.balance }}</td>
+                        <td>{{ log.description or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>尚無點數異動紀錄</p>
+        </div>
+    {% endif %}
+</div>
+
+<div class="section referral-logs">
+    <h3>🎁 最近 10 筆推薦獎勵紀錄</h3>
+    {% if referral_logs and referral_logs|length > 0 %}
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>時間</th>
+                        <th>被推薦人 Email</th>
+                        <th>獎勵點數</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in referral_logs %}
+                    <tr>
+                        <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>{{ log.referred_email }}</td>
+                        <td>
+                            <span class="credit-increase">+{{ log.credits_awarded }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>尚無推薦紀錄</p>
+        </div>
+    {% endif %}
+</div>
+
+<div class="section referral-program">
+    <h3>📢 推薦計畫</h3>
+    <div class="referral-info">
+        <p>分享您的推薦碼，每成功推薦一位新會員註冊，您將獲得 <strong>{{ REFERRAL_AWARD_CREDITS or 20 }} 點數</strong>！</p>
+        {% if referral_code %}
+        <div class="referral-share">
+            <label>您的推薦碼：</label>
+            <div class="referral-code-box">
+                <span id="referralCode">{{ referral_code }}</span>
+                <button onclick="copyReferralCode()" class="button button-small">複製</button>
+            </div>
+            <p class="referral-link">
+                推薦連結：<span id="referralLink">{{ request.url_root }}?ref={{ referral_code }}</span>
+                <button onclick="copyReferralLink()" class="button button-small">複製連結</button>
+            </p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="section navigation">
+    <a href="{{ url_for('index') }}" class="button">返回儀表板</a>
+</div>
+
+<script>
+function copyReferralCode() {
+    const code = document.getElementById('referralCode').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        alert('推薦碼已複製！');
+    });
+}
+
+function copyReferralLink() {
+    const link = document.getElementById('referralLink').textContent;
+    navigator.clipboard.writeText(link).then(() => {
+        alert('推薦連結已複製！');
+    });
+}
+
+async function upgradeSubscription() {
+    try {
+        const response = await fetch('/api/stripe/create-checkout-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: '{{ config.google_email if config else "" }}',
+                success_url: window.location.origin + '/member-area?upgrade=success',
+                cancel_url: window.location.origin + '/member-area?upgrade=cancel'
+            })
+        });
+        
+        const data = await response.json();
+        if (data.checkout_url) {
+            window.location.href = data.checkout_url;
+        } else {
+            alert('升級失敗：' + (data.error || '未知錯誤'));
+        }
+    } catch (error) {
+        alert('升級失敗：' + error.message);
+    }
+}
+</script>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+.member-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.info-item {
+    background: var(--neutral-background, #f8f9fa);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #e9ecef);
+}
+
+.info-item label {
+    display: block;
+    font-weight: bold;
+    color: var(--text-secondary, #666);
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.membership-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.85em;
+}
+
+.pro-member {
+    background: linear-gradient(45deg, #ffd700, #ffed4e);
+    color: #8b7200;
+}
+
+.free-member {
+    background: var(--neutral-background, #e9ecef);
+    color: var(--text-secondary, #666);
+}
+
+.credits-count {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: var(--primary-sky-blue, #0891b2);
+}
+
+.referral-code {
+    font-family: 'Courier New', monospace;
+    background: var(--background-color, #fff);
+    padding: 4px 8px;
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 4px;
+}
+
+.table-container {
+    overflow-x: auto;
+    margin: 15px 0;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--background-color, #fff);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.data-table th {
+    background: var(--primary-sky-blue, #0891b2);
+    color: white;
+    padding: 12px;
+    text-align: left;
+    font-weight: bold;
+}
+
+.data-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color, #e9ecef);
+}
+
+.data-table tbody tr:hover {
+    background: var(--neutral-background, #f8f9fa);
+}
+
+.credit-increase {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.credit-decrease {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.change-type {
+    background: var(--neutral-background, #e9ecef);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary, #666);
+    background: var(--neutral-background, #f8f9fa);
+    border-radius: 8px;
+}
+
+.upgrade-prompt {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.upgrade-prompt h3 {
+    margin: 0 0 10px 0;
+}
+
+.upgrade-prompt p {
+    margin: 0 0 15px 0;
+    opacity: 0.9;
+}
+
+.referral-info {
+    background: var(--neutral-background, #f8f9fa);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #e9ecef);
+}
+
+.referral-share {
+    margin-top: 15px;
+}
+
+.referral-code-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.referral-code-box span {
+    background: var(--background-color, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+}
+
+.referral-link {
+    margin: 10px 0;
+    font-size: 0.9em;
+}
+
+.referral-link span {
+    display: inline-block;
+    background: var(--background-color, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8em;
+    margin: 0 5px;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+</style>
+{% endblock %}

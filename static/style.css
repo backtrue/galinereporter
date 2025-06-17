@@ -6,10 +6,10 @@
     --primary-medium-blue: #73A9D9; /* 主色 - 中藍 */
     --primary-light-blue: #8BB4D9;  /* 主色 - 淺藍 */
     --primary-sky-blue: #A2DCF2;    /* 主色 - 天空藍 */
-    
+
     --background-main: #F2F2F2;    /* 整體頁面背景 - 淺灰 */
     --surface-card: #FFFFFF;       /* 卡片、區塊背景 - 純白 */
-    
+
     --text-primary: #2c3e50;       /* 主要文字、標題 - 深藍灰 */
     --text-secondary: #555e67;     /* 次要文字 - 稍淺的灰藍 */
     --text-subtle: #7f8c8d;        /* 更次要的文字、輔助說明 - 灰 */
@@ -22,7 +22,7 @@
     --color-success: #27ae60;        /* 成功 - 綠色 */
     --color-warning: #f39c12;        /* 警告 - 橘色 */
     --color-error: #e74c3c;          /* 錯誤 - 紅色 */
-    
+
     --color-success-bg: #e8f5e9; /* 成功訊息背景 */
     --color-warning-bg: #fff3cd; /* 警告訊息背景 */
     --color-error-bg: #f8d7da;   /* 錯誤訊息背景 */
@@ -329,7 +329,7 @@ select:focus, input:focus { /* 輸入框獲取焦點時的樣式 */
     .member-info li {
         flex-direction: column;
     }
-    
+
     .mini-table {
         display: block;
         overflow-x: auto;
@@ -387,4 +387,68 @@ select:focus, input:focus { /* 輸入框獲取焦點時的樣式 */
 
 .footer a:hover {
     text-decoration: underline; /* 滑鼠懸停時顯示底線 */
+}
+
+/* 會員相關樣式 */
+.membership-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.member-status-card {
+    background: var(--neutral-background, #f8f9fa);
+    border: 1px solid var(--border-color, #e9ecef);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.status-item .label {
+    font-size: 0.85em;
+    color: var(--text-secondary, #666);
+    margin-bottom: 5px;
+}
+
+.status-item .value {
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+.membership-pro {
+    color: #ffc107;
+}
+
+.membership-free {
+    color: var(--text-secondary, #666);
+}
+
+.credits {
+    color: var(--primary-sky-blue, #0891b2);
+}
+
+.status-actions {
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .member-status-card {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .status-item {
+        margin-bottom: 10px;
+    }
 }
