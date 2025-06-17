@@ -487,7 +487,7 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             end_date_for_avg = target_date - datetime.timedelta(days=1); start_date_for_avg = end_date_for_avg - datetime.timedelta(days=6)
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
-                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None); count_hist_days = len(historical_snapshots)
+                total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None); total_hist_revenue = sum(s.total_revenue for s in historical_snapshotsif s.total_revenue is not None); count_hist_days = len(historical_snapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
                 if current_sessions > avg_sessions * 1.05: sessions_insight = " (📈 高於平均)"
@@ -1177,6 +1177,7 @@ def terms_of_service(): # <--- 確保函式名稱是 terms_of_service
     effective_date = datetime.date.today().strftime('%Y-%m-%d') # 或者一個固定的日期
     current_year = datetime.date.today().year
     return render_template('terms_of_service.html', effective_date=effective_date, current_year=current_year)
+
 # --- 執行 Flask App ---
 if __name__ == '__main__':
     with app.app_context():
