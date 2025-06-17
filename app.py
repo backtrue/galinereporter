@@ -326,38 +326,107 @@ def google_callback():
 
 @app.route('/login/line')
 def login_line():
-    current_user_email = session.get('current_user_google_email')
-    if not current_user_email: flash("請先登入 Google 帳號，才能綁定 LINE。", "warning"); return redirect(url_for('index'))
-    state = str(uuid.uuid4()); session['line_oauth_state'] = state; session['line_auth_target_google_email'] = current_user_email
-    line_login_url = f"https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id={LINE_CHANNEL_ID}&redirect_uri={LINE_REDIRECT_URI}&state={state}&scope=profile%20openid%20email"
-    return redirect(line_login_url)
+    if not session.get('current_user_google_email'):
+        flash("請先登入 Google 帳號，再連結 LINE。", "warning")
+        return redirect(url_for('login_google'))
+
+    # 檢查必要的 LINE 設定
+    if not LINE_CHANNEL_ID or not LINE_CHANNEL_SECRET:
+        flash("LINE 設定不完整，請聯繫管理員。", "error")
+        return redirect(url_for('settings'))
+
+    line_auth_url = f"https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id={LINE_CHANNEL_ID}&redirect_uri={LINE_REDIRECT_URI}&state=12345&scope=profile%20openid%20email"
+    return redirect(line_auth_url)
 
 @app.route('/line-callback')
 def line_callback():
-    target_google_email = session.pop('line_auth_target_google_email', None)
-    code = request.args.get('code'); state_from_line = request.args.get('state'); stored_state = session.pop('line_oauth_state', None)
-    if state_from_line is None or state_from_line != stored_state: flash('LINE 登入 state 參數不符或已過期，請重試。', 'error'); return redirect(url_for('settings'))
-    if not code: flash('LINE 登入未返回授權碼，請重試。', 'error'); return redirect(url_for('settings'))
-    if not target_google_email: flash('無法確定要為哪個 Google 帳號綁定 LINE，請重新登入 Google。', 'error'); return redirect(url_for('index'))
-    token_url = "https://api.line.me/oauth2/v2.1/token"; headers = {'Content-Type': 'application/x-www-form-urlencoded'}; data = {'grant_type': 'authorization_code', 'code': code, 'redirect_uri': LINE_REDIRECT_URI, 'client_id': LINE_CHANNEL_ID, 'client_secret': LINE_CHANNEL_SECRET}
-    token_response = None; profile_response = None
-    try:
-        token_response = requests.post(token_url, headers=headers, data=data); token_response.raise_for_status()
-        token_data = token_response.json(); line_access_token = token_data.get('access_token')
-        if not line_access_token: print(f"無法從 LINE 取得 Access Token for {target_google_email}"); flash("無法取得 LINE Access Token", "error"); return redirect(url_for('settings'))
-        profile_url = "https://api.line.me/v2/profile"; profile_headers = {'Authorization': f'Bearer {line_access_token}'}
-        profile_response = requests.get(profile_url, headers=profile_headers); profile_response.raise_for_status()
-        profile_data = profile_response.json(); user_id_from_line = profile_data.get('userId')
-        if user_id_from_line:
-            with app.app_context():
-                config = UserConfig.query.filter_by(google_email=target_google_email).first()
-                if config is None: flash(f"找不到 Google 帳號 {target_google_email} 的設定記錄。", "error"); return redirect(url_for('settings'))
-                config.line_user_id = user_id_from_line; config.updated_at = datetime.datetime.utcnow(); db.session.commit()
-                print(f"為 {target_google_email} 儲存 LINE User ID: {user_id_from_line}"); flash(f"成功為 Google 帳號 {target_google_email} 連結 LINE 帳號！", "success")
-        else: print(f"無法從 LINE Profile 取得 User ID for {target_google_email}"); flash("無法取得 LINE User ID", "error")
+    code = request.args.get('code')
+    error = request.args.get('error')
+    state = request.args.get('state')
+
+    if error:
+        flash(f"LINE 登入失敗: {error}", "error")
         return redirect(url_for('settings'))
-    except requests.exceptions.RequestException as e: print(f"LINE API 請求失敗 for {target_google_email}: {e}"); flash("與 LINE API 連接錯誤。", "error"); return redirect(url_for('settings'))
-    except Exception as e: print(f"處理 LINE Callback 時發生未知錯誤 for {target_google_email}: {e}"); flash("處理 LINE 回應時發生未知錯誤。", "error"); return redirect(url_for('settings'))
+
+    if not code:
+        flash("LINE 登入失敗：未收到授權碼", "error")
+        return redirect(url_for('settings'))
+
+    # 檢查 state 參數
+    if state != '12345':
+        flash("LINE 登入失敗：狀態參數不匹配", "error")
+        return redirect(url_for('settings'))
+
+    # 檢查必要的 LINE 設定
+    if not LINE_CHANNEL_ID or not LINE_CHANNEL_SECRET:
+        flash("LINE 設定不完整，請聯繫管理員。", "error")
+        return redirect(url_for('settings'))
+
+    # 交換 access token
+    token_data = {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': LINE_REDIRECT_URI,
+        'client_id': LINE_CHANNEL_ID,
+        'client_secret': LINE_CHANNEL_SECRET
+    }
+
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+    try:
+        token_response = requests.post('https://api.line.me/oauth2/v2.1/token', data=token_data, headers=headers)
+
+        if token_response.status_code != 200:
+            print(f"LINE Token 交換失敗: Status {token_response.status_code}, Response: {token_response.text}")
+            flash(f"LINE Token 交換失敗: {token_response.status_code}", "error")
+            return redirect(url_for('settings'))
+
+        token_info = token_response.json()
+        access_token = token_info.get('access_token')
+
+        if not access_token:
+            flash("LINE Token 交換失敗：未收到 access token", "error")
+            return redirect(url_for('settings'))
+
+        # 取得使用者資訊
+        profile_headers = {'Authorization': f'Bearer {access_token}'}
+        profile_response = requests.get('https://api.line.me/v2/profile', headers=profile_headers)
+
+        if profile_response.status_code != 200:
+            print(f"取得 LINE 使用者資訊失敗: Status {profile_response.status_code}, Response: {profile_response.text}")
+            flash(f"取得 LINE 使用者資訊失敗: {profile_response.status_code}", "error")
+            return redirect(url_for('settings'))
+
+        profile_info = profile_response.json()
+        line_user_id = profile_info.get('userId')
+
+        if not line_user_id:
+            flash("取得 LINE 使用者 ID 失敗", "error")
+            return redirect(url_for('settings'))
+
+        # 更新資料庫
+        google_email = session.get('current_user_google_email')
+        if google_email:
+            with app.app_context():
+                user_config = UserConfig.query.filter_by(google_email=google_email).first()
+                if user_config:
+                    user_config.line_user_id = line_user_id
+                    db.session.commit()
+                    flash("LINE 帳號連結成功！", "success")
+                    print(f"LINE 帳號連結成功：{google_email} -> {line_user_id}")
+                else:
+                    flash("找不到對應的使用者設定", "error")
+        else:
+            flash("請先登入 Google 帳號", "warning")
+
+    except requests.exceptions.RequestException as e:
+        print(f"LINE API 請求錯誤: {e}")
+        flash("LINE 連結過程中發生網路錯誤", "error")
+    except Exception as e:
+        print(f"LINE 連結未知錯誤: {e}")
+        flash("LINE 連結失敗，請稍後再試", "error")
+
+    return redirect(url_for('settings'))
 
 @app.route('/set-ga-property', methods=['POST'])
 def set_ga_property():
