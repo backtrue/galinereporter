@@ -22,7 +22,7 @@ if STRIPE_SECRET_KEY:
 # --- Google API 相關 import ---
 from google.oauth2.credentials import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
-from google.analytics.data-v1beta.types import RunReportRequest, Dimension, Metric, DateRange
+from google.analytics.data_v1beta.types import RunReportRequest, Dimension, Metric, DateRange
 from google.analytics.admin import AnalyticsAdminServiceClient
 from google.api_core.exceptions import GoogleAPIError
 
