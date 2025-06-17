@@ -89,7 +89,7 @@ with app.app_context():
     print("應用程式啟動：檢查並建立資料庫表格..."); db.create_all(); print("應用程式啟動：資料庫表格檢查/建立完畢。")
 
 # --- Google/LINE OAuth/Bot 設定 ---
-GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID'); GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET'); GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"; GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://127.0.0.1:5000/google-callback'); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID'); GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET'); GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"; GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'https://your-deployment-url.replit.app/google-callback'); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 LINE_CHANNEL_ID = os.getenv('LINE_CHANNEL_ID'); LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET'); LINE_REDIRECT_URI = os.getenv('LINE_REDIRECT_URI', 'http://127.0.0.1:5000/line-callback')
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 SCHEDULER_SECRET_TOKEN = os.getenv('SCHEDULER_SECRET_TOKEN')
