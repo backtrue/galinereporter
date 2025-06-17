@@ -1,0 +1,5 @@
+modules = ["python-3.12", "php-8.2", "bash", "web"]
+
+[nix]
+channel = "stable-24_05"
+packages = ["c-ares", "cacert", "cargo", "grpc", "libffi", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc", "zlib"]
