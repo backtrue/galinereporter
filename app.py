@@ -1126,7 +1126,7 @@ def login_line():
 
     if not redirect_uri:
         flash("無法決定 LINE callback URL，請聯繫管理員。", "error")
-        return redirect(```python
+        return redirect(url_for('index'))
 url_for('settings'))
 
     print(f"LINE OAuth - 使用重定向 URI: {redirect_uri}")
