@@ -614,7 +614,7 @@ def create_credit_checkout_session():
     data = request.get_json() or {}
     credits = int(data.get('credits', 0))
     if credits not in [50, 100, 200, 500]:
-        return jsonify({"error": "僅支援購買 50/100/200/500 點"}), 400
+        return jsonify({"error": "僅支援購買 50/100/200 點"}), 400
     user = UserConfig.query.filter_by(google_email=current_user_email).first()
     if not user:
         return jsonify({"error": "找不到用戶"}), 404
@@ -1364,6 +1364,11 @@ def generate_ga_report(user_config):
 # --- 執行 Flask App ---
 if __name__ == '__main__':
     with app.app_context():
-        print("檢查並建立資料庫表格..."); db.create_all(); print("資料庫表格檢查完畢。")
+        print("檢查並建立資料庫表格...")
+        db.create_all()
+        print("資料庫表格檢查完畢。")
     print("啟動 Flask 應用程式...")
+    # 在開發環境中強制使用 HTTPS 設定
+    import os
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'  # 禁用不安全傳輸
     app.run(host='0.0.0.0', port=5000, debug=True)
