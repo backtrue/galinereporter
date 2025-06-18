@@ -371,7 +371,7 @@ if os.getenv('REPL_OWNER') and os.getenv('REPL_SLUG'):
     default_redirect_uri = f"{preview_url}/google-callback"
 else:
     # Production 模式
-    default_redirect_uri = 'https://galinereporter--backtrue.repl.co/google-callback'
+    default_redirect_uri = 'https://galinereporter-1-backtrue.replit.app/google-callback'
 
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', default_redirect_uri); GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 LINE_CHANNEL_ID = os.getenv('LINE_CHANNEL_ID'); LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET'); 
@@ -381,7 +381,7 @@ if os.getenv('REPL_OWNER') and os.getenv('REPL_SLUG'):
     default_line_redirect_uri = f"{preview_url}/line-callback"
 else:
     # Production 模式
-    default_line_redirect_uri = 'https://galinereporter--backtrue.repl.co/line-callback'
+    default_line_redirect_uri = 'https://galinereporter-1-backtrue.replit.app/line-callback'
 
 LINE_REDIRECT_URI = os.getenv('LINE_REDIRECT_URI', default_line_redirect_uri)
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
