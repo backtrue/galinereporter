@@ -881,18 +881,12 @@ from oauthlib.oauth2 import WebApplicationClient
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 
-# OAuth 設定 - 修正重定向 URI
-if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
-    # 檢查是否在 Replit 環境
-    if os.getenv('REPL_SLUG') and os.getenv('REPL_OWNER'):
-        # Replit 環境
-        REPL_SLUG = os.getenv('REPL_SLUG')
-        REPL_OWNER = os.getenv('REPL_OWNER')
-        REDIRECT_URI = f"https://{REPL_SLUG}.{REPL_OWNER}.repl.co/google-callback"
-    else:
-        # 本地開發環境
-        REDIRECT_URI = "http://localhost:5000/google-callback"
-else:
+# 偵測執行環境，決定 redirect_uri
+if os.getenv('REPLIT_DEPLOYMENT') == '1':  # 正式部署環境
+    REDIRECT_URI = "https://galinereporter-1-backtrue.replit.app/google-callback"
+elif os.getenv('REPL_SLUG'):  # 在 Replit 開發環境中
+    REDIRECT_URI = f"https://{os.getenv('REPL_SLUG')}--{os.getenv('REPL_OWNER', 'backtrue')}.repl.co/google-callback"
+else:  # 本地開發環境
     REDIRECT_URI = "http://localhost:5000/google-callback"
 
 print(f"OAuth Redirect URI: {REDIRECT_URI}")
