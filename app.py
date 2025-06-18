@@ -881,11 +881,11 @@ from oauthlib.oauth2 import WebApplicationClient
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 
-# 偵測執行環境，決定 redirect_uri
 # 統一使用正確的 Replit 部署網域
 REDIRECT_URI = "https://galinereporter-1-backtrue.replit.app/google-callback"
 
 print(f"OAuth Redirect URI: {REDIRECT_URI}")
+print(f"請確保 Google Cloud Console 中的 OAuth redirect URI 設定為: {REDIRECT_URI}")
 # 統一的 OAuth scope 設定
 OAUTH_SCOPES = [
     "openid",
