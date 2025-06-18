@@ -1205,7 +1205,7 @@ def login_google():
     )
 
     # 設定 redirect URI
-    flow.redirect_uri = url_for('google_callback', _external=True)
+    flow.redirect_uri = url_for('google_callback', _external=True).replace('http://', 'https://')
 
     # 獲取授權 URL
     authorization_url, state = flow.authorization_url(
