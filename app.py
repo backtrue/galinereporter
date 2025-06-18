@@ -492,7 +492,7 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
-                total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None)
+                total_hist_revenue = sum(s.total_hist_revenue for s in historical_snapshots if s.total_revenue is not None)
                 count_hist_days = len(historical_snapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
@@ -1246,12 +1246,12 @@ def google_callback():
 
         # 建立 Flow 物件來處理 OAuth
         from google_auth_oauthlib.flow import Flow
+        GOOGLE_SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
         flow = Flow.from_client_config(
             client_config,
-            scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly'],
-            state=state
+            scopes=GOOGLE_SCOPES
         )
-        flow.redirect_uri = url_for('google_callback', _external=True)
+        flow.redirect_uri = 'https://galinereporter-1-backtrue.replit.app/google-callback'
 
         # 使用授權碼換取 tokens
         flow.fetch_token(authorization_response=request.url)
