@@ -882,12 +882,8 @@ GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 
 # 偵測執行環境，決定 redirect_uri
-if os.getenv('REPLIT_DEPLOYMENT') == '1':  # 正式部署環境
-    REDIRECT_URI = "https://galinereporter-1-backtrue.replit.app/google-callback"
-elif os.getenv('REPL_SLUG'):  # 在 Replit 開發環境中
-    REDIRECT_URI = f"https://{os.getenv('REPL_SLUG')}--{os.getenv('REPL_OWNER', 'backtrue')}.repl.co/google-callback"
-else:  # 本地開發環境
-    REDIRECT_URI = "http://localhost:5000/google-callback"
+# 統一使用正確的 Replit 部署網域
+REDIRECT_URI = "https://galinereporter-1-backtrue.replit.app/google-callback"
 
 print(f"OAuth Redirect URI: {REDIRECT_URI}")
 # 統一的 OAuth scope 設定
