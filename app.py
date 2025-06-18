@@ -1538,8 +1538,7 @@ def login():
         flash('Google 登入發生錯誤，請稍後再試。', 'error')
         return redirect(url_for('index'))
 
-@app.route('/google-callback')
-def google_callback():
+# Duplicate route removed - google_callback already defined above
     if 'state' not in session:
         flash('無效的授權狀態。', 'error')
         return redirect(url_for('index'))
