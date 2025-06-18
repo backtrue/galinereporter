@@ -875,47 +875,227 @@ def settings():
                            google_access_token_test_result=access_token_result)
 
 from google_auth_oauthlib.flow import Flow
+from oauthlib.oauth2 import WebApplicationClient
 
-@app.route('/google-login')
+# --- Google OAuth 設定 ---
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid_configuration"
+
+# 統一的 OAuth scope 設定
+OAUTH_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email", 
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/analytics.readonly"
+]
+
+# OAuth2 流程設定
+def get_google_provider_cfg():
+    return requests.get(GOOGLE_DISCOVERY_URL).json()
+
+def init_oauth_flow():
+    """初始化 OAuth2 流程"""
+    google_provider_cfg = get_google_provider_cfg()
+    client = WebApplicationClient(GOOGLE_CLIENT_ID)
+    return client, google_provider_cfg
+
+@app.route('/login/google')
 def google_login():
-    # Google OAuth 設定
-    GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
-    GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-
+    """Google OAuth 登入"""
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        flash('Google OAuth 設定錯誤', 'error')
+        flash('Google OAuth 尚未設定，請聯繫管理員。', 'error')
         return redirect(url_for('index'))
 
-    # 動態取得當前網域
-    current_domain = request.host_url.rstrip('/')
-    redirect_uri = f"{current_domain}/google-callback"
+    try:
+        client, google_provider_cfg = init_oauth_flow()
+        authorization_endpoint = google_provider_cfg["authorization_endpoint"]
 
-    # 建立 OAuth flow
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [redirect_uri]
-            }
-        },
-        scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
-    )
+        # 使用 HTTPS redirect_uri
+        redirect_uri = url_for('google_callback', _external=True)
+        if redirect_uri.startswith('http://'):
+            redirect_uri = redirect_uri.replace('http://', 'https://', 1)
 
-    # 設定 redirect_uri
-    flow.redirect_uri = redirect_uri
+        # 將 scope 排序以確保一致性
+        sorted_scopes = sorted(OAUTH_SCOPES)
 
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
+        # 構建授權 URL
+        request_uri = client.prepare_request_uri(
+            authorization_endpoint,
+            redirect_uri=redirect_uri,
+            scope=sorted_scopes,
+            access_type="offline",
+            prompt="consent"
+        )
 
-    session['state'] = state
-    return redirect(authorization_url)
+        # 儲存 scope 到 session 以便後續驗證
+        session['oauth_scopes'] = ' '.join(sorted_scopes)
 
-# 移除重複的路由定義，保留原有的 google_callback 函數 
+        return redirect(request_uri)
+    except Exception as e:
+        print(f"Google 登入錯誤: {e}")
+        traceback.print_exc()
+        flash('Google 登入發生錯誤，請稍後再試。', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/login/google/callback')
+def google_callback():
+    """Google OAuth 回調處理"""
+    try:
+        # 檢查是否有錯誤參數
+        error = request.args.get('error')
+        if error:
+            flash(f'Google 登入被取消或發生錯誤: {error}', 'error')
+            return redirect(url_for('index'))
+
+        # 檢查必要參數
+        code = request.args.get('code')
+        if not code:
+            flash('授權碼缺失，請重新登入。', 'error')
+            return redirect(url_for('index'))
+
+        client, google_provider_cfg = init_oauth_flow()
+        token_endpoint = google_provider_cfg["token_endpoint"]
+
+        # 確保 redirect_uri 使用 HTTPS
+        redirect_uri = url_for('google_callback', _external=True)
+        if redirect_uri.startswith('http://'):
+            redirect_uri = redirect_uri.replace('http://', 'https://', 1)
+
+        # 確保 authorization_response 使用 HTTPS
+        authorization_response = request.url
+        if authorization_response.startswith('http://'):
+            authorization_response = authorization_response.replace('http://', 'https://', 1)
+
+        # 準備 token 請求
+        token_url, headers, body = client.prepare_token_request(
+            token_endpoint,
+            authorization_response=authorization_response,
+            redirect_url=redirect_uri,
+            code=code
+        )
+
+        # 獲取 token
+        token_response = requests.post(
+            token_url,
+            headers=headers,
+            data=body,
+            auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET),
+            timeout=30
+        )
+
+        if token_response.status_code != 200:
+            print(f"Token 請求失敗: {token_response.status_code}, {token_response.text}")
+            flash('獲取訪問令牌失敗，請重新登入。', 'error')
+            return redirect(url_for('index'))
+
+        # 解析 token
+        token_data = token_response.json()
+        client.parse_request_body_response(token_response.text)
+
+        # 驗證 scope（如果 session 中有記錄的話）
+        if 'oauth_scopes' in session:
+            returned_scope = token_data.get('scope', '')
+            expected_scopes = set(session['oauth_scopes'].split())
+            returned_scopes = set(returned_scope.split())
+
+            # 檢查是否包含所有必要的 scope
+            required_scopes = {'openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/analytics.readonly'}
+            if not required_scopes.issubset(returned_scopes):
+                print(f"Scope 不匹配: 期望 {expected_scopes}, 收到 {returned_scopes}")
+                # 不直接報錯，繼續處理，但記錄警告
+                print("警告: OAuth scope 不完全匹配，但包含必要權限，繼續處理")
+
+        # 獲取用戶信息
+        userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
+        uri, headers, body = client.add_token(userinfo_endpoint)
+        userinfo_response = requests.get(uri, headers=headers, data=body, timeout=30)
+
+        if userinfo_response.status_code != 200:
+            print(f"用戶信息請求失敗: {userinfo_response.status_code}")
+            flash('獲取用戶信息失敗，請重新登入。', 'error')
+            return redirect(url_for('index'))
+
+        userinfo = userinfo_response.json()
+
+        # 驗證用戶信息
+        if not userinfo.get("email_verified"):
+            flash("Google 帳戶郵箱未驗證，無法登入。", 'error')
+            return redirect(url_for('index'))
+
+        email = userinfo["email"]
+        session['user_email'] = email
+
+        # 清除 oauth_scopes session
+        session.pop('oauth_scopes', None)
+
+        # 檢查或建立用戶
+        user = UserConfig.query.filter_by(google_email=email).first()
+        if not user:
+            # 新用戶註冊
+            user = UserConfig(
+                google_email=email,
+                ga_account_name=userinfo.get("name", ""),
+                timezone='Asia/Taipei',
+                credits=FREE_SIGNUP_CREDITS
+            )
+
+            # 產生推薦碼
+            get_or_create_referral_code(user)
+
+            db.session.add(user)
+
+            # 處理推薦碼
+            referral_code = request.args.get('ref')
+            if referral_code and referral_code != user.referral_code:
+                # 檢查推薦碼是否有效
+                referrer = UserConfig.query.filter_by(referral_code=referral_code).first()
+                if referrer:
+                    user.referred_by = referral_code
+                    # 獎勵被推薦人
+                    user.credits += RECOMMEND_CREDITS
+                    log_credit_change(user, RECOMMEND_CREDITS, 'referral', f'被 {referrer.google_email} 推薦註冊')
+                    # 獎勵推薦人
+                    referrer.credits += REFERRAL_AWARD_CREDITS
+                    referrer.referral_credits += REFERRAL_AWARD_CREDITS
+                    log_credit_change(referrer, REFERRAL_AWARD_CREDITS, 'referral', f'推薦 {email} 註冊')
+                    # 記錄推薦日誌
+                    ref_log = ReferralLog(
+                        referrer_code=referral_code,
+                        referred_email=email,
+                        credits_awarded=REFERRAL_AWARD_CREDITS
+                    )
+                    db.session.add(ref_log)
+
+            try:
+                db.session.commit()
+                flash(f'歡迎加入！您已獲得 {user.credits} 點數。', 'success')
+            except Exception as e:
+                print(f"新用戶註冊錯誤: {e}")
+                db.session.rollback()
+                flash('註冊過程發生錯誤，請重新嘗試。', 'error')
+                return redirect(url_for('index'))
+        else:
+            flash(f'歡迎回來，{email}！', 'success')
+
+        # 加密並儲存 refresh token
+        tokens = client.token
+        if 'refresh_token' in tokens:
+            encrypted_refresh_token = encrypt_token(tokens['refresh_token'])
+            if encrypted_refresh_token:
+                user.google_refresh_token_encrypted = encrypted_refresh_token
+                try:
+                    db.session.commit()
+                except Exception as e:
+                    print(f"儲存 refresh token 錯誤: {e}")
+
+        return redirect(url_for('dashboard'))
+
+    except Exception as e:
+        print(f"Google callback 處理錯誤: {e}")
+        traceback.print_exc()
+        flash('登入過程發生錯誤，請重新嘗試。', 'error')
+        return redirect(url_for('index'))
 
 # Helper function to get the LINE callback URL dynamically
 def get_line_callback_url():
@@ -946,7 +1126,8 @@ def login_line():
 
     if not redirect_uri:
         flash("無法決定 LINE callback URL，請聯繫管理員。", "error")
-        return redirect(url_for('settings'))
+        return redirect(```python
+url_for('settings'))
 
     print(f"LINE OAuth - 使用重定向 URI: {redirect_uri}")
 
@@ -1239,7 +1420,7 @@ def google_callback():
                 "client_id": GOOGLE_CLIENT_ID,
                 "client_secret": GOOGLE_CLIENT_SECRET,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
+                "token_uri": "https://oauth2.googleapis.com/o/oauth2/token",
                 "redirect_uris": [url_for('google_callback', _external=True)]
             }
         }
