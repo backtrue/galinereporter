@@ -492,6 +492,7 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
+```text
                 total_hist_revenue = sum([
 s.total_revenue for s in historical_snapshots if s.total_revenue is not None])
                 count_hist_days = len(historical_snapshots)
@@ -519,25 +520,39 @@ s.total_revenue for s in historical_snapshots if s.total_revenue is not None])
 def index():
     print(f"首頁訪問 - Session: user_id={session.get('user_id')}, email={session.get('google_email')}")
 
-    # 若已登入，重導向到儀表板
-    if 'user_id' in session:
-        config = UserConfig.query.get(session['user_id'])
-        if config:
-            print(f"用戶已登入，重導向到儀表板: {config.google_email}")
-            return redirect(url_for('dashboard'))
-        else:
-            # 清除無效的 session
-            print(f"Session 中的 user_id ({session['user_id']}) 無效，清除 session")
-            session.clear()
+    # 準備模板變數
+    google_linked = 'google_access_token' in session
+    line_linked = False  # LINE 功能暫時關閉
+    config = None
+    ga_property_set = False
+    show_ga_selector = False
+    ga_properties = []
+    current_timezone = 'Asia/Taipei'
+    timezones = ['Asia/Taipei', 'UTC', 'America/New_York', 'Europe/London']
 
-    # 檢查是否有推薦碼參數
-    referral_code = request.args.get('referral_code')
-    if referral_code:
-        session['pending_referral_code'] = referral_code
-        flash(f'推薦碼已記錄：{referral_code}', 'info')
-        print(f"推薦碼已記錄: {referral_code}")
+    if google_linked:
+        user_email = session.get('google_email')
+        if user_email:
+            config = UserConfig.query.filter_by(google_email=user_email).first()
+            if config:
+                ga_property_set = bool(config.ga_property_id)
+                current_timezone = config.timezone
 
-    return render_template('index.html')
+    return render_template('index.html',
+                         google_linked=google_linked,
+                         line_linked=line_linked,
+                         config=config,
+                         ga_property_set=ga_property_set,
+                         show_ga_selector=show_ga_selector,
+                         ga_properties=ga_properties,
+                         current_timezone=current_timezone,
+                         timezones=timezones)
+
+@app.route('/login-line')
+def login_line():
+    """LINE 登入功能 (暫時停用)"""
+    flash('LINE 登入功能目前暫時停用，敬請見諒。', 'info')
+    return redirect(url_for('index'))
 
 @app.route('/dashboard')
 def dashboard():
@@ -570,6 +585,90 @@ def dashboard():
                          google_linked=google_linked,
                          line_linked=line_linked,
                          ga_property_set=ga_property_set)
+
+@app.route('/set-timezone', methods=['POST'])
+def set_timezone():
+    """設定時區"""
+    if 'google_email' not in session:
+        flash('請先登入 Google 帳號', 'error')
+        return redirect(url_for('index'))
+
+    timezone = request.form.get('timezone')
+    if not timezone:
+        flash('請選擇時區', 'error')
+        return redirect(url_for('index'))
+
+    user_email = session['google_email']
+    config = UserConfig.query.filter_by(google_email=user_email).first()
+
+    if config:
+        config.timezone = timezone
+        db.session.commit()
+        flash(f'時區已更新為 {timezone}', 'success')
+    else:
+        flash('找不到用戶設定', 'error')
+
+    return redirect(url_for('index'))
+
+@app.route('/set-ga-property', methods=['POST'])
+def set_ga_property():
+    """設定 GA 資源"""
+    if 'google_email' not in session:
+        flash('請先登入 Google 帳號', 'error')
+        return redirect(url_for('index'))
+
+    property_id = request.form.get('property_id')
+    if not property_id:
+        flash('請選擇 GA4 資源', 'error')
+        return redirect(url_for('index'))
+
+    user_email = session['google_email']
+    config = UserConfig.query.filter_by(google_email=user_email).first()
+
+    if config:
+        config.ga_property_id = property_id
+        db.session.commit()
+        flash(f'GA4 資源已設定為 {property_id}', 'success')
+    else:
+        flash('找不到用戶設定', 'error')
+
+    return redirect(url_for('index'))
+
+# --- GA 測試相關路由 ---
+@app.route('/test-google-token')
+def test_google_token():
+    """測試 Google Access Token"""
+    if 'google_email' not in session:
+        flash('請先登入 Google 帳號', 'warning')
+        return redirect(url_for('login_google'))
+
+    google_email = session['google_email']
+    access_token = get_google_access_token(user_email=google_email)
+
+    if access_token:
+        flash('成功取得 Google Access Token！', 'success')
+        session['google_access_token_test_result'] = '成功'
+    else:
+        flash('無法取得 Google Access Token，請檢查設定', 'error')
+        session['google_access_token_test_result'] = '失敗'
+
+    return redirect(url_for('settings'))
+
+@app.route('/logout-all-debug')
+def logout_all_debug():
+    session.clear()
+    flash('已登出所有帳號 (Debug)', 'info')
+    return redirect(url_for('index'))
+
+@app.route('/test-ga-report-manual/<date_mode>')
+def test_ga_report_manual(date_mode):
+    """手動測試 GA 報表"""
+    if 'google_email' not in session:
+        return "請先登入 Google 帳號"
+
+    # 這裡可以添加實際的 GA 報表測試邏輯
+    flash(f'GA 報表測試 ({date_mode}) 功能開發中...', 'info')
+    return redirect(url_for('index'))
 
 # ... (其他所有路由 @app.route('/settings') 到 @app.route('/test-ga-report-manual/<date_mode>') 與上一版相同，此處省略) ...
 
@@ -1059,7 +1158,7 @@ def google_callback():
             print("資料庫提交成功")
 
             if is_new_user:
-                flash('歡迎！您的帳號已成功建立', 'success')
+                flash('歡迎！您的帳號已成功建立','success')
                 # 清理 session 中的推薦碼
                 session.pop('pending_referral_code', None)
             else:
@@ -1118,13 +1217,24 @@ def terms_of_service():
     """服務條款頁面"""
     return render_template('terms_of_service.html')
 
-if __name__ == '__main__':
+def init_db():
+    """初始化資料庫"""
     with app.app_context():
-        print("檢查並建立資料庫表格...")
-        db.create_all()
-        print("資料庫表格檢查完畢。")
+        try:
+            db.create_all()
+            print("資料庫表格檢查/建立完成")
+        except Exception as e:
+            print(f"資料庫初始化錯誤: {e}")
+            traceback.print_exc()
+
+if __name__ == '__main__':
+    # 建立資料表
+    print("應用程式啟動：檢查並建立資料庫表格...")
+    init_db()
+    print("應用程式啟動：資料庫表格檢查/建立完畢。")
     print("啟動 Flask 應用程式...")
-    # 在開發環境中強制使用 HTTPS 設定
-    import os
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'  # 禁用不安全傳輸
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=False)
+    except Exception as e:
+        print(f"Flask 應用程式啟動失敗: {e}")
+        traceback.print_exc()
