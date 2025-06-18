@@ -492,7 +492,8 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
-                total_hist_revenue = sum(s.total_hist_revenue for s in historical_snapshots if s.total_revenue is not None)
+                total_hist_revenue = sum(s.total_hist<replit_final_file>
+_revenue for s in historical_snapshots if s.total_revenue is not None)
                 count_hist_days = len(historical_snapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
@@ -1469,6 +1470,184 @@ def login_google():
 
     except Exception as e:
         flash(f'Google 登入過程發生錯誤: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+# Helper function to get the LINE callback URL dynamically
+def get_line_callback_url():
+    current_host = request.host
+    if current_host.endswith('.repl.co'):
+        return f"https://{current_host}/line-callback"
+    elif current_host.endswith('.replit.app'):
+        return f"https://{current_host}/line-callback"
+    else:
+        return 'https://galinereporter.replit.app/line-callback'
+
+# --- Google Analytics 報告生成 ---
+def generate_ga_report(user_config):
+    pass
+
+# --- 執行 Flask App ---
+if __name__ == '__main__':
+    with app.app_context():
+        print("檢查並建立資料庫表格...")
+        db.create_all()
+        print("資料庫表格檢查完畢。")
+    print("啟動 Flask 應用程式...")
+    # 在開發環境中強制使用 HTTPS 設定
+    import os
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'  # 禁用不安全傳輸
+
+@app.route('/login')
+def login():
+    if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET]):
+        flash('Google OAuth 設定不完整，請聯繫管理員。', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        # 生成授權 URL
+        flow = Flow.from_client_config(
+            client_config={
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [url_for('google_callback', _external=True)]
+                }
+            },
+            scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly']
+        )
+
+        # 設定重導向 URI
+        callback_url = url_for('google_callback', _external=True)
+        # 確保在部署環境中使用 https
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            callback_url = callback_url.replace('http://', 'https://')
+
+        flow.redirect_uri = callback_url
+
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+
+        session['state'] = state
+        return redirect(authorization_url)
+    except Exception as e:
+        print(f"Google OAuth 登入錯誤: {e}")
+        flash('Google 登入發生錯誤，請稍後再試。', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/google-callback')
+def google_callback():
+    if 'state' not in session:
+        flash('無效的授權狀態。', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        flow = Flow.from_client_config(
+            client_config={
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [url_for('google_callback', _external=True)]
+                }
+            },
+            scopes=['openid', 'email', 'profile', 'https://www.googleapis.com/auth/analytics.readonly'],
+            state=session['state']
+        )
+
+        callback_url = url_for('google_callback', _external=True)
+        # 確保在部署環境中使用 https
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            callback_url = callback_url.replace('http://', 'https://')
+
+        flow.redirect_uri = callback_url
+
+        # 取得授權碼，確保使用正確的 URL scheme
+        authorization_response = request.url
+        if request.headers.get('X-Forwarded-Proto') == 'https':
+            authorization_response = authorization_response.replace('http://', 'https://')
+
+        flow.fetch_token(authorization_response=authorization_response)
+
+        # 取得使用者資訊
+        credentials = flow.credentials
+        user_info_service = build('oauth2', 'v2', credentials=credentials)
+        user_info = user_info_service.userinfo().get().execute()
+
+        email = user_info.get('email')
+        if not email:
+            flash('無法取得使用者 email，請重新登入。', 'error')
+            return redirect(url_for('index'))
+
+        # 儲存加密的 refresh token
+        encrypted_refresh_token = encrypt_token(credentials.refresh_token) if credentials.refresh_token else None
+
+        # 查詢或建立使用者記錄
+        user_config = UserConfig.query.filter_by(google_email=email).first()
+        if not user_config:
+            # 檢查推薦碼
+            referral_code = request.args.get('ref')
+            referred_by = None
+
+            if referral_code:
+                referrer = UserConfig.query.filter_by(referral_code=referral_code).first()
+                if referrer and referrer.google_email != email:
+                    referred_by = referral_code
+
+            user_config = UserConfig(
+                google_email=email,
+                google_refresh_token_encrypted=encrypted_refresh_token,
+                credits=FREE_SIGNUP_CREDITS,
+                referred_by=referred_by
+            )
+
+            db.session.add(user_config)
+            db.session.commit()
+
+            # 記錄註冊 credit 異動
+            if FREE_SIGNUP_CREDITS > 0:
+                log_credit_change(user_config, FREE_SIGNUP_CREDITS, 'signup', '註冊獎勵')
+
+            # 處理推薦獎勵
+            if referred_by:
+                referrer = UserConfig.query.filter_by(referral_code=referred_by).first()
+                if referrer:
+                    referrer.referral_credits += REFERRAL_AWARD_CREDITS
+                    referrer.credits += REFERRAL_AWARD_CREDITS
+                    db.session.commit()
+
+                    # 記錄推薦獎勵
+                    log_credit_change(referrer, REFERRAL_AWARD_CREDITS, 'referral', f'推薦 {email}')
+
+                    # 記錄推薦紀錄
+                    referral_log = ReferralLog(
+                        referrer_code=referred_by,
+                        referred_email=email,
+                        credits_awarded=REFERRAL_AWARD_CREDITS
+                    )
+                    db.session.add(referral_log)
+                    db.session.commit()
+        else:
+            # 更新 refresh token
+            if encrypted_refresh_token:
+                user_config.google_refresh_token_encrypted = encrypted_refresh_token
+                db.session.commit()
+
+        # 建立 session
+        session['user_email'] = email
+        session['google_credentials'] = credentials_to_dict(credentials)
+
+        flash(f'歡迎回來，{email}！', 'success')
+        return redirect(url_for('dashboard'))
+
+    except Exception as e:
+        print(f"Google callback 錯誤: {e}")
+        traceback.print_exc()
+        flash('Google 授權過程發生錯誤，請重新嘗試。', 'error')
         return redirect(url_for('index'))
 
 # Helper function to get the LINE callback URL dynamically
