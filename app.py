@@ -492,7 +492,7 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
-                total_hist_revenue = sum(s.total_hist_revenue for s in historical_snapshots if s.total_revenue is not None)
+                total_histrevenue = sum(s.total_hist_revenue for s in historical_snapshots if s.total_revenue is not None)
                 count_hist_days = len(historical_snapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
@@ -1475,67 +1475,15 @@ def google_callback():
         flash(f'Google 登入過程發生錯誤: {str(e)}', 'error')
         return redirect(url_for('index'))
 
-# Duplicate route removed - keeping only one line_callback definition
-    code = request.args.get('code')
-    state = request.args.get('state')
-
-    if not code:
-        flash('LINE 登入失敗：缺少授權碼', 'error')
-        return redirect(url_for('index'))
-
-    # 檢查 session 中的 user email
-    user_email = session.get('user_email')
-    if not user_email:
-        flash('請先完成 Google 登入', 'error')
-        return redirect(url_for('index'))
-
-    # 使用授權碼換取 access token
-    token_url = 'https://api.line.me/oauth2/v2.1/token'
-    token_data = {
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': url_for('line_callback', _external=True),
-        'client_id': LINE_CHANNEL_ID,
-        'client_secret': LINE_CHANNEL_SECRET
-    }
-
-    try:
-        token_response = requests.post(token_url, data=token_data)
-        token_response.raise_for_status()
-        token_info = token_response.json()
-        access_token = token_info.get('access_token')
-
-        if not access_token:
-            flash('LINE 登入失敗：無法取得存取權杖', 'error')
-            return redirect(url_for('index'))
-
-        # 使用 access token 取得用戶資訊
-        profile_url = 'https://api.line.me/v2/profile'
-        headers = {'Authorization': f'Bearer {access_token}'}
-        profile_response = requests.get(profile_url, headers=headers)
-        profile_response.raise_for_status()
-        profile_info = profile_response.json()
-
-        line_user_id = profile_info.get('userId')
-        if not line_user_id:
-            flash('LINE 登入失敗：無法取得用戶 ID', 'error')
-            return redirect(url_for('index'))
-
-        # 更新用戶的 LINE user ID
-        user = UserConfig.query.filter_by(google_email=user_email).first()
-        if user:
-            user.line_user_id = line_user_id
-            db.session.commit()
-            flash('LINE 帳號連結成功！', 'success')
-        else:
-            flash('找不到對應的用戶紀錄', 'error')
-
-    except requests.RequestException as e:
-        flash(f'LINE API 呼叫失敗: {str(e)}', 'error')
-    except Exception as e:
-        flash(f'LINE 登入過程發生錯誤: {str(e)}', 'error')
-
-    return redirect(url_for('dashboard'))
+# Helper function to get the LINE callback URL dynamically
+def get_line_callback_url():
+    current_host = request.host
+    if current_host.endswith('.repl.co'):
+        return f"https://{current_host}/line-callback"
+    elif current_host.endswith('.replit.app'):
+        return f"https://{current_host}/line-callback"
+    else:
+        return 'https://galinereporter.replit.app/line-callback'
 
 # --- Google Analytics 報告生成 ---
 def generate_ga_report(user_config):
