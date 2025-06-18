@@ -1127,7 +1127,6 @@ def login_line():
     if not redirect_uri:
         flash("無法決定 LINE callback URL，請聯繫管理員。", "error")
         return redirect(url_for('index'))
-url_for('settings'))
 
     print(f"LINE OAuth - 使用重定向 URI: {redirect_uri}")
 
@@ -1552,4 +1551,4 @@ if __name__ == '__main__':
     # 在開發環境中強制使用 HTTPS 設定
     import os
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'  # 禁用不安全傳輸
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
