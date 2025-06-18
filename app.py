@@ -493,7 +493,7 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
                 total_hist_revenue = sum([
-s.total_revenue for s in historical_snapshots if s.total_revenue is not None)
+s.total_revenue for s in historical_snapshots if s.total_revenue is not None])
                 count_hist_days = len(historical_snapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
