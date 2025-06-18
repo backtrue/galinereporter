@@ -914,8 +914,8 @@ def login_google():
         # 構建 Google OAuth URL
         oauth_url = 'https://accounts.google.com/o/oauth2/v2/auth'
 
-        # 使用固定的 redirect_uri，與 Google Console 設定一致
-        redirect_uri = 'https://galinereporter-1-backtrue.replit.app/google-callback'
+        # 使用定義好的 REDIRECT_URI 常數，與 Google Console 設定一致
+        redirect_uri = REDIRECT_URI
 
         params = {
             'client_id': GOOGLE_CLIENT_ID,
@@ -973,8 +973,8 @@ def google_callback():
         # 準備 token 交換請求
         token_url = 'https://oauth2.googleapis.com/token'
 
-        # 使用完整的 HTTPS URL 作為 redirect_uri
-        redirect_uri = 'https://galinereporter-1-backtrue.replit.app/google-callback'
+        # 使用定義好的 REDIRECT_URI 常數，與 Google Console 設定一致
+        redirect_uri = REDIRECT_URI
 
         print(f"使用的 redirect_uri: {redirect_uri}")
 
