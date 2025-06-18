@@ -492,7 +492,6 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
-```text
                 total_hist_revenue = sum([
 s.total_revenue for s in historical_snapshots if s.total_revenue is not None])
                 count_hist_days = len(historical_snapshots)
