@@ -492,7 +492,8 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
             historical_snapshots = ReportSnapshot.query.filter(ReportSnapshot.config_id == config.id, ReportSnapshot.report_for_timeslot == report_timeslot_str, ReportSnapshot.report_for_date >= start_date_for_avg.strftime('%Y-%m-%d'), ReportSnapshot.report_for_date <= end_date_for_avg.strftime('%Y-%m-%d')).all()
             if historical_snapshots:
                 total_hist_sessions = sum(s.sessions for s in historical_snapshots if s.sessions is not None)
-                total_hist_revenue = sum(s.total_revenue for s in historical_snapshots if s.total_revenue is not None)
+                total_hist_revenue = sum(```python
+s.total_revenue for s in historical_snapshots if s.total_revenue is not None)
                 count_hist_days = len(historical_snapshots)
                 avg_sessions = total_hist_sessions / count_hist_days if count_hist_days > 0 else 0; avg_revenue = total_hist_revenue / count_hist_days if count_hist_days > 0 else 0.0
                 avg_sessions_str = f"{avg_sessions:.0f}"; avg_revenue_str = f"{avg_revenue:.2f}"
@@ -515,40 +516,60 @@ def run_and_send_report(user_config_id, date_mode='yesterday'):
 
 # === Routes ===
 @app.route('/')
-def index(): # 儀表板 (修正 NameError)
-    current_user_email = session.get('current_user_google_email') # 提前獲取 email
-    config = None
-    if current_user_email:
-        # --- 修正 SyntaxError: with app.app_context() 移到下一行並縮排 ---
-        with app.app_context():
-            config = UserConfig.query.filter_by(google_email=current_user_email).first()
+def index():
+    print(f"首頁訪問 - Session: user_id={session.get('user_id')}, email={session.get('google_email')}")
 
-    google_linked = bool(config and config.google_refresh_token_encrypted)
-    line_linked = bool(config and config.line_user_id)
-    ga_property_set = bool(config and config.ga_property_id)
+    # 若已登入，重導向到儀表板
+    if 'user_id' in session:
+        config = UserConfig.query.get(session['user_id'])
+        if config:
+            print(f"用戶已登入，重導向到儀表板: {config.google_email}")
+            return redirect(url_for('dashboard'))
+        else:
+            # 清除無效的 session
+            print(f"Session 中的 user_id ({session['user_id']}) 無效，清除 session")
+            session.clear()
 
-    ga_properties = []; ga_list_error = None; show_ga_selector = False
-    if google_linked and not ga_property_set:
-        if current_user_email: # 確保 email 存在才查詢
-            show_ga_selector = True
-            ga_properties_for_dropdown, ga_list_error, _ = get_ga_properties_from_db(user_email=current_user_email)
-            ga_properties = ga_properties_for_dropdown
-            if ga_list_error: flash(f"讀取 GA 資源清單錯誤: {ga_list_error}", "error")
-        else: flash("無法識別您的 Google 帳號，請嘗試重新連結 Google 以選擇 GA 資源。", "warning"); show_ga_selector = False
+    # 檢查是否有推薦碼參數
+    referral_code = request.args.get('referral_code')
+    if referral_code:
+        session['pending_referral_code'] = referral_code
+        flash(f'推薦碼已記錄：{referral_code}', 'info')
+        print(f"推薦碼已記錄: {referral_code}")
 
-    report_result = session.pop('ga_report_test_result', None)
-    access_token_result = session.pop('google_access_token_test_result', None)
+    return render_template('index.html')
+
+@app.route('/dashboard')
+def dashboard():
+    print(f"Dashboard 訪問 - Session: user_id={session.get('user_id')}, email={session.get('google_email')}")
+
+    # 檢查登入狀態
+    if 'user_id' not in session:
+        print("Session 中沒有 user_id，重導向到首頁")
+        flash('請先登入', 'warning')
+        return redirect(url_for('index'))
+
+    config = UserConfig.query.get(session['user_id'])
+    if not config:
+        print(f"找不到用戶資料 (user_id: {session['user_id']})，清除 session")
+        session.clear()
+        flash('用戶資料不存在，請重新登入', 'error')
+        return redirect(url_for('index'))
+
+    print(f"找到用戶資料: {config.google_email}")
+
+    # 判斷各種連結狀態
+    google_linked = bool(config.google_refresh_token_encrypted)
+    line_linked = bool(config.line_user_id)
+    ga_property_set = bool(config.ga_property_id)
+
+    print(f"連結狀態 - Google: {google_linked}, LINE: {line_linked}, GA: {ga_property_set}")
 
     return render_template('dashboard.html',
-                           google_linked=google_linked, line_linked=line_linked, ga_property_set=ga_property_set,
-                           show_ga_selector=show_ga_selector, ga_properties=ga_properties, ga_list_error=ga_list_error,
-                           config=config,
-                           credits_logs=CreditLog.query.filter_by(user_email=config.google_email).order_by(CreditLog.created_at.desc()).limit(10).all() if config else [],
-                           referral_code=get_or_create_referral_code(config) if config else None,
-                           referral_logs=ReferralLog.query.filter_by(referrer_code=config.referral_code).order_by(ReferralLog.created_at.desc()).limit(10).all() if config and config.referral_code else [],
-                           ga_report_test_result=report_result,
-                           google_user_email_debug=current_user_email,
-                           google_access_token_test_result=access_token_result)
+                         config=config,
+                         google_linked=google_linked,
+                         line_linked=line_linked,
+                         ga_property_set=ga_property_set)
 
 # ... (其他所有路由 @app.route('/settings') 到 @app.route('/test-ga-report-manual/<date_mode>') 與上一版相同，此處省略) ...
 
@@ -940,173 +961,135 @@ def login_google():
 
 @app.route('/google-callback')
 def google_callback():
+    if 'error' in request.args:
+        error_msg = request.args.get('error', '未知錯誤')
+        error_description = request.args.get('error_description', '')
+        print(f"Google OAuth 錯誤: {error_msg} - {error_description}")
+        flash(f'Google 授權失敗: {error_msg}', 'error')
+        return redirect(url_for('index'))
+
+    if 'code' not in request.args:
+        print("Google 回調缺少授權碼")
+        flash('授權碼遺失，請重新授權', 'error')
+        return redirect(url_for('index'))
+
     try:
-        # 檢查 session 中是否有 state
-        if 'oauth_state' not in session:
-            print("錯誤：session 中沒有 oauth_state")
-            flash('登入過程中發生錯誤，請重新嘗試', 'error')
+        print("開始處理 Google OAuth 回調...")
+
+        # 使用授權碼取得 access token
+        flow = google_auth_oauthlib.flow.Flow.from_client_config(
+            oauth_config, scopes=SCOPES
+        )
+        flow.redirect_uri = url_for('google_callback', _external=True)
+
+        print(f"設定的 redirect_uri: {flow.redirect_uri}")
+        print(f"收到的回調 URL: {request.url}")
+
+        # 取得 token
+        flow.fetch_token(authorization_response=request.url)
+        credentials = flow.credentials
+
+        print("成功取得 Google credentials")
+
+        # 使用憑證取得使用者資訊
+        user_info_service = build('oauth2', 'v2', credentials=credentials)
+        user_info = user_info_service.userinfo().get().execute()
+        google_email = user_info.get('email')
+
+        if not google_email:
+            print("無法從 Google 獲取 email")
+            flash('無法獲取 Google 帳號 email', 'error')
             return redirect(url_for('index'))
 
-        # 取得 authorization code
-        code = request.args.get('code')
-        state = request.args.get('state')
-        error = request.args.get('error')
-
-        if error:
-            print(f"OAuth 錯誤: {error}")
-            flash(f'Google 授權失敗: {error}', 'error')
-            return redirect(url_for('index'))
-
-        if not code:
-            print("錯誤：沒有收到 authorization code")
-            flash('沒有收到授權碼', 'error')
-            return redirect(url_for('index'))
-
-        # 驗證 state
-        if state != session.get('oauth_state'):
-            print(f"State 不匹配: 收到 {state}, 預期 {session.get('oauth_state')}")
-            flash('安全驗證失敗', 'error')
-            return redirect(url_for('index'))
-
-        print(f"收到 authorization code: {code[:10]}...")
-
-        # 準備 token 交換請求
-        token_url = 'https://oauth2.googleapis.com/token'
-
-        # 使用定義好的 REDIRECT_URI 常數，與 Google Console 設定一致
-        redirect_uri = REDIRECT_URI
-
-        print(f"使用的 redirect_uri: {redirect_uri}")
-
-        token_data = {
-            'client_id': GOOGLE_CLIENT_ID,
-            'client_secret': GOOGLE_CLIENT_SECRET,
-            'code': code,
-            'grant_type': 'authorization_code',
-            'redirect_uri': redirect_uri
-        }
-
-        # 發送 token 交換請求
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
-        }
-
-        response = requests.post(token_url, data=token_data, headers=headers)
-
-        print(f"Token 交換回應狀態: {response.status_code}")
-        print(f"Token 交換回應內容: {response.text}")
-
-        if response.status_code != 200:
-            error_data = response.json() if response.content else {}
-            error_description = error_data.get('error_description', response.text)
-            print(f"Token 交換失敗: {error_description}")
-            flash(f'Token 交換失敗: {error_description}', 'error')
-            return redirect(url_for('index'))
-
-        token_info = response.json()
-        access_token = token_info.get('access_token')
-        refresh_token = token_info.get('refresh_token')
-
-        if not access_token:
-            print("錯誤：沒有收到 access_token")
-            flash('沒有收到存取權杖', 'error')
-            return redirect(url_for('index'))
-
-        print("成功取得 access_token")
-
-        # 使用 access_token 取得使用者資訊
-        userinfo_url = 'https://www.googleapis.com/oauth2/v2/userinfo'
-        headers = {'Authorization': f'Bearer {access_token}'}
-
-        userinfo_response = requests.get(userinfo_url, headers=headers)
-
-        if userinfo_response.status_code != 200:
-            print(f"取得使用者資訊失敗: {userinfo_response.text}")
-            flash('無法取得使用者資訊', 'error')
-            return redirect(url_for('index'))
-
-        user_info = userinfo_response.json()
-        user_email = user_info.get('email')
-
-        if not user_email:
-            print("錯誤：沒有收到使用者 email")
-            flash('無法取得使用者 email', 'error')
-            return redirect(url_for('index'))
-
-        print(f"使用者 email: {user_email}")
+        print(f"Google 登入成功，email: {google_email}")
 
         # 檢查或建立使用者
-        user = UserConfig.query.filter_by(google_email=user_email).first()
+        config = UserConfig.query.filter_by(google_email=google_email).first()
+        is_new_user = config is None
 
-        if not user:
-            # 檢查是否有推薦碼
-            referral_code = session.get('signup_referral_code')
-            referred_by = None
+        if not config:
+            print(f"建立新用戶: {google_email}")
 
-            if referral_code:
-                referrer = UserConfig.query.filter_by(referral_code=referral_code).first()
-                if referrer:
-                    referred_by = referral_code
-                    print(f"使用者 {user_email} 由 {referrer.google_email} 推薦")
+            # 處理推薦碼邏輯
+            referral_code_param = request.args.get('referral_code') or session.get('pending_referral_code')
+            referrer_credits_awarded = False
 
-            # 建立新使用者
-            user = UserConfig(
-                google_email=user_email,
-                google_refresh_token_encrypted=encrypt_token(refresh_token) if refresh_token else None,
-                credits=FREE_SIGNUP_CREDITS,
-                referred_by=referred_by
-            )
-
-            db.session.add(user)
-            db.session.commit()
-
-            # 產生推薦碼
-            get_or_create_referral_code(user)
-
-            # 如果有推薦人，給推薦人獎勵
-            if referred_by:
-                referrer = UserConfig.query.filter_by(referral_code=referred_by).first()
-                if referrer:
+            if referral_code_param:
+                referrer = UserConfig.query.filter_by(referral_code=referral_code_param).first()
+                if referrer and referrer.google_email != google_email:
+                    print(f"找到推薦人: {referrer.google_email}")
+                    # 給推薦人獎勵
                     referrer.credits += REFERRAL_AWARD_CREDITS
                     referrer.referral_credits += REFERRAL_AWARD_CREDITS
-                    db.session.commit()
+                    referrer_credits_awarded = True
 
-                    # 記錄推薦
+                    # 記錄推薦獎勵
                     referral_log = ReferralLog(
-                        referrer_code=referred_by,
-                        referred_email=user_email,
+                        referrer_code=referral_code_param,
+                        referred_email=google_email,
                         credits_awarded=REFERRAL_AWARD_CREDITS
                     )
                     db.session.add(referral_log)
-                    db.session.commit()
+                    log_credit_change(referrer, REFERRAL_AWARD_CREDITS, 'referral', f'推薦新用戶 {google_email}')
+                else:
+                    print(f"推薦碼無效或自己推薦自己: {referral_code_param}")
 
-            # 清除 session 中的推薦碼
-            session.pop('signup_referral_code', None)
+            # 建立新使用者
+            config = UserConfig(
+                google_email=google_email,
+                google_refresh_token_encrypted=encrypt_token(credentials.refresh_token) if credentials.refresh_token else None,
+                credits=FREE_SIGNUP_CREDITS,
+                referred_by=referral_code_param if referrer_credits_awarded else None
+            )
 
-            print(f"建立新使用者: {user_email}")
-            flash('歡迎！您的帳號已成功建立', 'success')
+            # 生成推薦碼
+            get_or_create_referral_code(config)
+
+            db.session.add(config)
+
         else:
+            print(f"更新現有用戶: {google_email}")
             # 更新現有使用者的 refresh token
-            if refresh_token:
-                user.google_refresh_token_encrypted = encrypt_token(refresh_token)
-                db.session.commit()
-            print(f"使用者登入: {user_email}")
-            flash('歡迎回來！', 'success')
+            if credentials.refresh_token:
+                config.google_refresh_token_encrypted = encrypt_token(credentials.refresh_token)
+
+        # 提交資料庫變更
+        try:
+            db.session.commit()
+            print("資料庫提交成功")
+
+            if is_new_user:
+                flash('歡迎！您的帳號已成功建立', 'success')
+                # 清理 session 中的推薦碼
+                session.pop('pending_referral_code', None)
+            else:
+                print(f"現有用戶登入成功: {google_email}")
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"資料庫提交失敗: {e}")
+            traceback.print_exc()
+            flash('帳號處理過程中發生錯誤，請重新嘗試', 'error')
+            return redirect(url_for('index'))
 
         # 設定 session
-        session['user_email'] = user_email
-        session['access_token'] = access_token
+        session['user_id'] = config.id
+        session['google_email'] = google_email
 
-        # 清除 OAuth state
-        session.pop('oauth_state', None)
+        print(f"Session 設定完成: user_id={config.id}, email={google_email}")
 
-        print(f"登入成功，導向儀表板")
+        # 檢查下一步跳轉
+        next_page = session.pop('next_after_auth', None)
+        if next_page and next_page.startswith('/'):
+            print(f"重導向到指定頁面: {next_page}")
+            return redirect(next_page)
+
+        print("重導向到儀表板")
         return redirect(url_for('dashboard'))
 
     except Exception as e:
-        print(f"Google callback 發生錯誤: {e}")
-        print(f"錯誤詳情: {traceback.format_exc()}")
+        print(f"Google 回調處理錯誤: {e}")
+        traceback.print_exc()
         flash('登入過程中發生錯誤，請重新嘗試', 'error')
         return redirect(url_for('index'))
 
