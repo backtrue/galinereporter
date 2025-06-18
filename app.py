@@ -1398,8 +1398,7 @@ def login_google():
 
     return redirect(authorization_url)
 
-@app.route('/google-callback')
-def google_callback():
+# Duplicate route removed - google_callback already defined above
     code = request.args.get('code')
     state = request.args.get('state')
     error = request.args.get('error')
