@@ -98,3 +98,18 @@ function initializeTimezoneForm() {
     // ... (類似的邏輯)
 
 }); // DOMContentLoaded 結束
+
+// 檢查是否有任何網域相關的設定
+function createCheckoutSession(email) {
+    return fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            email: email,
+            success_url: 'https://galinereporter-1-backtrue.replit.app/dashboard',
+            cancel_url: 'https://galinereporter-1-backtrue.replit.app/'
+        })
+    });
+}
